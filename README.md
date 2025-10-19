@@ -108,93 +108,6 @@ DatabaseManager (資料庫管理)
     └── 統一儲存所有平台資料
 ```
 
----
-
-## 🚀 快速開始
-
-### 0. 每日排程收集（推薦）
-
-這是最簡單的使用方式，適合定期排程執行：
-
-```bash
-# 1. 複製帳號配置檔範本
-cp accounts.example.txt accounts.txt
-
-# 2. 編輯 accounts.txt，填入要收集的帳號
-# [instagram]
-# nasa
-# natgeo
-# 
-# [twitter]
-# twitter
-# elonmusk
-
-# 3. 直接執行每日收集
-python main.py --mode daily
-```
-
-**這樣就完成了！** 系統會自動收集 `accounts.txt` 中設定的所有帳號。
-
-### 1. 基本使用範例
-
-```python
-from core.factory import CollectorFactory, register_all_collectors
-from config.platform_config import APIFY_TOKEN
-
-# 註冊所有平台收集器
-register_all_collectors()
-
-# 建立 Instagram 收集器
-collector = CollectorFactory.create_collector(
-    platform='instagram',
-    username='instagram',
-    api_token=APIFY_TOKEN
-)
-
-# 收集資料
-result = collector.collect_all(post_limit=10)
-print(result)
-```
-
-### 2. 多平台收集
-
-```python
-# 支援的平台
-platforms = ['instagram', 'facebook', 'twitter', 'threads']
-
-for platform in platforms:
-    collector = CollectorFactory.create_collector(
-        platform=platform,
-        username='example_user',
-        api_token=APIFY_TOKEN
-    )
-    result = collector.collect_all(post_limit=5)
-    print(f"{platform}: {result.success}")
-```
-
-### 3. 互動式測試
-
-```bash
-python main.py --mode interactive
-```
-
-### 4. 批次收集
-
-```bash
-# 每日收集（從 accounts.txt 讀取帳號） - 推薦用於排程
-python main.py --mode daily
-
-# 使用自訂帳號檔
-python main.py --mode daily --accounts-file my_accounts.txt
-
-# 從資料庫讀取使用者列表並批次收集
-python main.py --mode batch --platform instagram
-
-# 收集所有平台（從資料庫讀取）
-python main.py --mode all
-```
-
----
 
 ## 📦 安裝步驟
 
@@ -739,7 +652,7 @@ cp accounts.example.txt accounts.txt
 4. 動作設定：
    - 程式: `python.exe` 或完整路徑 `C:\Python39\python.exe`
    - 引數: `main.py --mode daily`
-   - 起始於: `C:\Users\jaesm14774\Desktop\self_project\MediaCollect`
+   - 起始於: `C:\Users\<user>\Desktop\MediaCollect`
 
 或使用命令列建立：
 ```powershell
