@@ -75,21 +75,6 @@ python main.py --mode daily
 
 ---
 
-## 🔄 從舊版設定遷移
-
-如果您之前使用的是舊版設定方式（直接在程式碼中寫入 Token），請按照以下步驟遷移：
-
-### 1. 從 `config/platform_config.py` 遷移
-
-**舊版（不推薦）：**
-```python
-APIFY_TOKEN_LIST = [
-    'apify_api_xxxxx',
-    'apify_api_yyyyy',
-]
-MEDIA_FOLDER_PATH = 'E:/path/to/media/'
-SQL_CONFIGURE_PATH = 'C:/path/to/sql_config.txt'
-```
 
 **新版（推薦）：**
 在 `.env` 檔案中設定：
@@ -101,38 +86,6 @@ DB_HOST=127.0.0.1
 DB_PORT=3306
 DB_USER=your_user
 DB_PASSWORD=your_password
-```
-
-### 2. 從 `sql_config.txt` 遷移
-
-**舊版 sql_config.txt：**
-```csv
-name,value
-ip,127.0.0.1
-port,3306
-user,my_username
-password,my_password
-```
-
-**新版 .env：**
-```env
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USER=my_username
-DB_PASSWORD=my_password
-DB_NAME=crawler
-```
-
-### 3. 從 `Discord.txt` 遷移
-
-**舊版 Discord.txt：**
-```csv
-name,token
-程式bug權杖,https://discord.com/api/webhooks/xxxxx
-```
-
-**新版 .env：**
-```env
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/xxxxx
 ```
 
