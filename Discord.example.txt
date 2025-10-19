@@ -1,0 +1,3 @@
+name,token
+程式bug權杖,your_discord_webhook_token_here
+

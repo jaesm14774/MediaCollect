@@ -1,0 +1,55 @@
+# 環境變數檔案（包含機敏資訊）
+.env
+
+# 機敏設定檔
+accounts.txt
+sql_config.txt
+Discord.txt
+
+# Python 快取
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 虛擬環境
+venv/
+env/
+ENV/
+.venv
+
+# IDE 設定
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 作業系統檔案
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日誌檔案
+*.log
+
+# 資料庫檔案
+*.db
+*.sqlite
+*.sqlite3
+
+# 下載的媒體檔案（如果有本地儲存）
+media/
+downloads/
+
+# 測試覆蓋率報告
+htmlcov/
+.coverage
+.coverage.*
+.pytest_cache/
+
+# 分發 / 打包
+dist/
+build/
+*.egg-info/
