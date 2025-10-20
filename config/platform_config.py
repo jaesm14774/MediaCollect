@@ -54,8 +54,16 @@ PLATFORM_SETTINGS = {
     'facebook': {
         'enabled': False,
         'post_limit': 10,
+        'photo_limit': None,        # 照片抓取數量
         'story_limit': None,
         'download_media': True,
+        # 時間範圍設定 (用於限制抓取的貼文時間範圍)
+        # 格式: YYYY-MM-DD (如 "2024-01-01")
+        #      或相對時間 (如 "1 day", "2 months", "3 years")
+        #      或完整 ISO 時間戳 (如 "2025-09-23T10:02:01")
+        'posts_newer_than': None,  # 只抓取此日期之後的貼文 (None=不限制)
+        'posts_older_than': None,  # 只抓取此日期之前的貼文 (None=不限制)
+        'caption_text': False,     # 是否提取影片字幕
     },
     'twitter': {
         'enabled': False,
@@ -99,6 +107,7 @@ APIFY_ACTORS = {
     'facebook': {
         'profile': 'apify/facebook-pages-scraper',
         'post': 'apify/facebook-posts-scraper',
+        'photo': 'apify/facebook-photos-scraper',
         'story': None  # Facebook 限時動態需要登入
     },
     'twitter': {

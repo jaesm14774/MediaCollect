@@ -141,7 +141,12 @@ class BaseSocialMediaCollector(ABC):
         self, 
         post_limit: int = 50, 
         story_limit: Optional[int] = None,
-        include_stories: bool = True
+        include_stories: bool = True,
+        photo_limit: Optional[int] = None,
+        include_photos: bool = False,
+        posts_newer_than: Optional[str] = None,
+        posts_older_than: Optional[str] = None,
+        caption_text: bool = False
     ) -> CollectionResult:
         """
         執行完整的資料收集流程
@@ -150,6 +155,11 @@ class BaseSocialMediaCollector(ABC):
             post_limit: 要抓取的貼文數量
             story_limit: 要抓取的限時動態數量
             include_stories: 是否抓取限時動態
+            photo_limit: 要抓取的照片數量
+            include_photos: 是否抓取照片（僅適用於支援的平台，如 Facebook）
+            posts_newer_than: 只抓取此日期之後的貼文（僅適用於支援的平台，如 Facebook）
+            posts_older_than: 只抓取此日期之前的貼文（僅適用於支援的平台，如 Facebook）
+            caption_text: 是否提取影片字幕（僅適用於支援的平台，如 Facebook）
         
         返回:
             CollectionResult 物件
@@ -182,7 +192,25 @@ class BaseSocialMediaCollector(ABC):
             
             # 2. 抓取貼文
             logger.info(f"[{self.platform.value}] 開始抓取貼文（限制: {post_limit} 筆）...")
-            posts = self.fetch_posts(limit=post_limit)
+            
+            # 檢查是否有時間範圍參數且 fetch_posts 支援這些參數
+            import inspect
+            fetch_posts_signature = inspect.signature(self.fetch_posts)
+            fetch_posts_params = fetch_posts_signature.parameters
+            
+            # 建構 fetch_posts 的參數
+            fetch_posts_kwargs = {'limit': post_limit}
+            
+            if 'only_posts_newer_than' in fetch_posts_params and posts_newer_than:
+                fetch_posts_kwargs['only_posts_newer_than'] = posts_newer_than
+            
+            if 'only_posts_older_than' in fetch_posts_params and posts_older_than:
+                fetch_posts_kwargs['only_posts_older_than'] = posts_older_than
+            
+            if 'caption_text' in fetch_posts_params and caption_text:
+                fetch_posts_kwargs['caption_text'] = caption_text
+            
+            posts = self.fetch_posts(**fetch_posts_kwargs)
             logger.info(f"  ✓ 成功抓取 {len(posts)} 筆貼文")
             
             # 3. 抓取限時動態（如果支援）
@@ -191,6 +219,15 @@ class BaseSocialMediaCollector(ABC):
                 logger.info(f"[{self.platform.value}] 開始抓取限時動態...")
                 stories = self.fetch_stories(limit=story_limit)
                 logger.info(f"  ✓ 成功抓取 {len(stories)} 筆限時動態")
+            
+            # 4. 抓取照片（如果支援且啟用）
+            photos = []
+            if include_photos and hasattr(self, 'fetch_photos'):
+                logger.info(f"[{self.platform.value}] 開始抓取照片...")
+                photos = self.fetch_photos(limit=photo_limit or 10)
+                logger.info(f"  ✓ 成功抓取 {len(photos)} 張照片")
+                # 將照片合併到貼文列表中
+                posts.extend(photos)
             
             # 計算執行時長
             finished_at = datetime.now()
@@ -229,7 +266,12 @@ class BaseSocialMediaCollector(ABC):
         self, 
         post_limit: int = 50, 
         story_limit: Optional[int] = None,
-        include_stories: bool = True
+        include_stories: bool = True,
+        photo_limit: Optional[int] = None,
+        include_photos: bool = False,
+        posts_newer_than: Optional[str] = None,
+        posts_older_than: Optional[str] = None,
+        caption_text: bool = False
     ) -> CollectionResult:
         """
         執行完整的資料收集流程（異步版本）
@@ -240,6 +282,11 @@ class BaseSocialMediaCollector(ABC):
             post_limit: 要抓取的貼文數量
             story_limit: 要抓取的限時動態數量
             include_stories: 是否抓取限時動態
+            photo_limit: 要抓取的照片數量
+            include_photos: 是否抓取照片（僅適用於支援的平台，如 Facebook）
+            posts_newer_than: 只抓取此日期之後的貼文（僅適用於支援的平台，如 Facebook）
+            posts_older_than: 只抓取此日期之前的貼文（僅適用於支援的平台，如 Facebook）
+            caption_text: 是否提取影片字幕（僅適用於支援的平台，如 Facebook）
         
         返回:
             CollectionResult 物件
@@ -248,7 +295,10 @@ class BaseSocialMediaCollector(ABC):
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None,  # 使用默認線程池
-            lambda: self.collect_all(post_limit, story_limit, include_stories)
+            lambda: self.collect_all(
+                post_limit, story_limit, include_stories, photo_limit, include_photos,
+                posts_newer_than, posts_older_than, caption_text
+            )
         )
         return result
     

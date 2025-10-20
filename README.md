@@ -18,6 +18,7 @@
 - [欄位轉換功能](#-欄位轉換功能)
 - [API 說明](#-api-說明)
 - [常見問題](#-常見問題)
+- [Facebook 收集器完整使用手冊](#-facebook-收集器完整使用手冊)
 
 ---
 
@@ -54,7 +55,7 @@
 | 平台 | 狀態 | 支援功能 | Apify Actor |
 |------|------|----------|-------------|
 | **Instagram** | ✅ 完整支援 | 使用者資訊、貼文、限時動態、輪播 | apify/instagram-profile-scraper<br>apify/instagram-post-scraper<br>igview-owner/instagram-story-viewer |
-| **Facebook** | ✅ 支援 | 粉絲專頁資訊、貼文 | apify/facebook-pages-scraper<br>apify/facebook-posts-scraper |
+| **Facebook** | ✅ 完整支援 | 粉絲專頁資訊、貼文、照片 (含OCR) | apify/facebook-pages-scraper<br>apify/facebook-posts-scraper<br>apify/facebook-photos-scraper |
 | **Twitter(X)** | ✅ 支援 | 使用者資訊、推文、轉推 | apify/twitter-scraper |
 | **Threads** | ✅ 支援 | 使用者資訊、串文 | apify/threads-scraper |
 | **TikTok** | 🚧 規劃中 | - | - |
@@ -226,8 +227,42 @@ PLATFORM_SETTINGS = {
         'story_limit': None,  # 限時動態數量
         'download_media': True,
     },
+    'facebook': {
+        'enabled': False,
+        'post_limit': 10,
+        'photo_limit': 10,
+        'story_limit': None,
+        'download_media': True,
+        # 時間範圍設定（只適用於 Facebook）
+        'posts_newer_than': None,  # 只抓取此日期之後的貼文
+        'posts_older_than': None,  # 只抓取此日期之前的貼文
+        'caption_text': False,     # 是否提取影片字幕
+    },
     # ... 其他平台
 }
+```
+
+#### Facebook 時間範圍設定說明
+
+Facebook 收集器支援時間範圍過濾，可以精確控制要抓取的貼文時間範圍：
+
+**支援的時間格式：**
+- **絕對日期**：`"2024-01-01"` (YYYY-MM-DD)
+- **完整時間戳**：`"2025-09-23T10:02:01"` (ISO 8601 格式)
+- **相對時間**：`"1 day"`, `"2 months"`, `"3 years"`, `"1 hour"`, `"30 minutes"`
+
+**使用範例：**
+```python
+# 只抓取最近 7 天的貼文
+'posts_newer_than': "7 days",
+
+# 抓取特定時間範圍的貼文
+'posts_newer_than': "2024-01-01",
+'posts_older_than': "2024-12-31",
+
+# 抓取最近一個月且提取影片字幕
+'posts_newer_than': "1 month",
+'caption_text': True,
 ```
 
 ### 4. 舊版設定檔（向下相容）
@@ -343,6 +378,8 @@ python example_unified.py
 
 ### 方式 4: 在程式碼中使用
 
+#### 基本使用範例
+
 ```python
 from core.factory import CollectorFactory, register_all_collectors
 from core.database_manager import create_database_manager_from_config
@@ -373,6 +410,71 @@ if result.success:
     # 下載媒體
     for post in result.posts:
         collector.download_media(post, 'E:/media/')
+```
+
+#### Facebook 時間範圍過濾範例
+
+```python
+from core.factory import CollectorFactory, register_all_collectors
+from config.platform_config import APIFY_TOKEN
+
+# 註冊收集器
+register_all_collectors()
+
+# 建立 Facebook 收集器
+collector = CollectorFactory.create_collector(
+    platform='facebook',
+    username='microsoft',  # Facebook 粉絲專頁名稱
+    api_token=APIFY_TOKEN
+)
+
+# 範例 1: 只抓取最近 7 天的貼文
+result = collector.collect_all(
+    post_limit=50,
+    posts_newer_than="7 days",
+    caption_text=True  # 提取影片字幕
+)
+
+# 範例 2: 抓取特定時間範圍的貼文
+result = collector.collect_all(
+    post_limit=100,
+    posts_newer_than="2024-01-01",
+    posts_older_than="2024-12-31"
+)
+
+# 範例 3: 抓取最近一個月的貼文
+result = collector.collect_all(
+    post_limit=50,
+    posts_newer_than="1 month"
+)
+
+# 範例 4: 使用完整時間戳
+result = collector.collect_all(
+    post_limit=30,
+    posts_newer_than="2025-10-01T00:00:00",
+    posts_older_than="2025-10-20T23:59:59"
+)
+```
+
+#### 使用 main.py 指定時間範圍
+
+```python
+from main import SocialMediaCrawler
+from config.platform_config import APIFY_TOKEN
+
+crawler = SocialMediaCrawler()
+
+# 收集 Facebook 粉絲專頁最近 7 天的貼文
+result = crawler.collect_user(
+    platform='facebook',
+    username='microsoft',
+    post_limit=50,
+    posts_newer_than="7 days",
+    caption_text=True
+)
+
+print(f"成功: {result.success}")
+print(f"貼文數: {len(result.posts)}")
 ```
 
 ---
@@ -897,6 +999,285 @@ GROUP BY platform;
 ```
 
 詳細說明請參閱 [LOG_FEATURE.md](LOG_FEATURE.md)
+
+---
+
+## 📘 Facebook 收集器完整使用手冊
+
+> 🎯 適合 Free User 使用 | 📅 最後更新: 2025-10-20
+
+### 🚀 快速開始
+
+#### 1. 基本設定
+
+確保您的 `.env` 檔案包含 Apify Token：
+```env
+APIFY_TOKEN_1=your_apify_token_here
+```
+
+#### 2. 啟用 Facebook 收集
+
+編輯 `config/platform_config.py`：
+```python
+PLATFORM_SETTINGS = {
+    'facebook': {
+        'enabled': True,  # 改為 True
+        'post_limit': 10,
+        'photo_limit': 10,
+        'download_media': True,
+    }
+}
+```
+
+#### 3. 基本使用範例
+```python
+from platforms.facebook_collector import FacebookCollector
+from config.platform_config import APIFY_TOKEN
+
+# 初始化
+collector = FacebookCollector(
+    username="nasa",
+    api_token=APIFY_TOKEN
+)
+
+# 抓取專頁資料
+user = collector.fetch_user_profile()
+print(f"專頁: {user.display_name} (粉絲: {user.follower_count:,})")
+
+# 抓取貼文
+posts = collector.fetch_posts(limit=5)
+print(f"抓取了 {len(posts)} 則貼文")
+
+# 抓取照片
+photos = collector.fetch_photos(limit=5)
+print(f"抓取了 {len(photos)} 張照片")
+```
+
+#### 4. 執行測試
+```bash
+python examples/test_facebook_collector.py
+```
+
+### 📦 三個 Apify Actors
+
+| Actor | 功能 | Free User | 特色 |
+|-------|------|-----------|------|
+| `facebook-pages-scraper` | 專頁基本資料 | ✅ | 完整專頁資訊、聯絡方式 |
+| `facebook-posts-scraper` | 貼文內容 | ✅ | 文字、圖片、影片、互動數據 |
+| `facebook-photos-scraper` | 照片專輯 | ✅ | 高畫質照片 + OCR 文字識別 |
+
+### ✨ 功能特色
+
+#### 專頁資料收集
+- ✅ 完整專頁資訊（名稱、描述、分類）
+- ✅ 粉絲數、追蹤中數量
+- ✅ 聯絡資訊（Email、電話、地址、網站）
+- ✅ 認證狀態智慧判斷
+- ✅ 頭像、封面圖 URL
+
+#### 貼文收集
+- ✅ 文字內容
+- ✅ 圖片、影片、縮圖
+- ✅ 互動數據（讚、留言、分享）
+- ✅ 發布時間（支援 3 種格式）
+- ✅ 貼文連結
+
+#### 照片收集
+- ✅ 高解析度圖片
+- ✅ OCR 文字識別
+- ✅ 照片專輯完整抓取
+
+### 🔧 技術改進
+
+#### 1. 多欄位 Fallback
+```python
+# 自動處理不同 API 回傳格式
+user_id = raw.get('pageId') or raw.get('facebookId', '')
+post_url = raw.get('url') or raw.get('topLevelUrl')
+```
+
+#### 2. 智慧認證判斷
+```python
+def _check_verified(self, raw):
+    # 檢查多個可能的認證欄位
+    if raw.get('verified'):
+        return True
+    if raw.get('CONFIRMED_OWNER_LABEL'):
+        return True
+    return False
+```
+
+#### 3. 多格式時間解析
+支援三種時間格式：
+- Unix timestamp (毫秒)
+- Facebook 格式: "Thursday, 6 April 2023 at 07:10"
+- ISO 8601: "2023-04-06T07:10:00Z"
+
+#### 4. 媒體去重處理
+```python
+# 避免重複加入相同 URL 的媒體
+if link_url and link_url not in [m.url for m in media_items]:
+    media_items.append(MediaItem(...))
+```
+
+### 📊 API 輸入格式
+
+#### 專頁資料
+```python
+run_input = {
+    "startUrls": [{"url": "https://www.facebook.com/nasa"}]
+}
+```
+
+#### 貼文收集
+```python
+run_input = {
+    "startUrls": [{"url": "https://www.facebook.com/nasa"}],
+    "resultsLimit": 10,
+    "proxy": {
+        "apifyProxyGroups": ["RESIDENTIAL"]
+    },
+    "maxRequestRetries": 10
+}
+```
+
+#### 照片收集
+```python
+run_input = {
+    "startUrls": [{"url": "https://www.facebook.com/nasa"}],
+    "resultsLimit": 10,
+    "proxy": {
+        "apifyProxyGroups": ["RESIDENTIAL"]
+    },
+    "maxRequestRetries": 10
+}
+```
+
+### 📝 輸出資料結構
+
+#### 專頁資料
+```python
+{
+    'platform': 'facebook',
+    'user_id': '100064975200317',
+    'username': 'nasa',
+    'display_name': 'NASA',
+    'is_verified': True,
+    'follower_count': 10505363,
+    'following_count': 26,
+    'category': 'Science Website',
+    'description': 'Explore and learn more...',
+    'external_url': 'https://science.nasa.gov/earth/',
+    'email': 'contact@nasa.gov',
+    'phone': '+1-xxx-xxx-xxxx',
+    'location': 'Washington, DC'
+}
+```
+
+#### 貼文資料
+```python
+{
+    'post_id': '10153102379324999',
+    'text': 'Vice President Kamala Harris...',
+    'like_count': 9,
+    'comment_count': 17,
+    'share_count': 5,
+    'created_at': datetime(2023, 4, 6, 7, 10),
+    'post_url': 'https://www.facebook.com/...',
+    'media_items': [...]
+}
+```
+
+### ❓ 常見問題
+
+#### Q1: Free User 可以使用嗎？
+**A:** 可以！建議設定：
+- `post_limit`: 5-10
+- `photo_limit`: 5-10
+
+#### Q2: 為什麼需要三個 Actors？
+**A:** 不同 Actor 專門處理不同類型的資料，資料更完整準確。
+
+#### Q3: 會消耗多少配額？
+**A:** 
+- 專頁資料: ~10-20 秒
+- 貼文 (10則): ~30-60 秒
+- 照片 (10張): ~30-60 秒
+
+Free tier 用戶建議每天不超過 20-30 次執行。
+
+#### Q4: 可以抓取私人專頁嗎？
+**A:** 不行，僅支援公開粉絲專頁。
+
+#### Q5: 可以抓取限時動態嗎？
+**A:** 目前不支援，Facebook 限時動態需要登入權限。
+
+#### Q6: 照片資料為什麼沒有互動數？
+**A:** `facebook-photos-scraper` 專注於照片本身。如需互動數據，請使用 `fetch_posts()`。
+
+#### Q7: 可以批次抓取多個專頁嗎？
+**A:** 可以！在 `accounts.txt` 中新增：
+```
+facebook,nasa
+facebook,nytimes
+facebook,natgeo
+```
+然後執行 `python main.py`
+
+#### Q8: 資料存在哪裡？
+**A:** 
+- **資料庫**: unified 資料庫（若已設定）
+- **媒體**: `media/facebook/專頁名稱/`
+- **日誌**: `logs/Collector_YYYYMMDD.log`
+
+#### Q9: 抓取失敗怎麼辦？
+**A:** 依序檢查：
+1. 確認專頁名稱正確
+2. 確認專頁為公開專頁
+3. 檢查 Apify 配額
+4. 查看日誌檔案
+5. 查看 Apify Dashboard
+
+#### Q10: 沒有返回資料
+**A:** 可能原因：
+- 專頁沒有足夠的貼文/照片
+- 遇到速率限制，等待後重試
+- 減少 `limit` 數量重試
+
+### 🎯 推薦測試專頁
+
+| 專頁名稱 | Username | 類型 | 特色 |
+|----------|----------|------|------|
+| NASA | `nasa` | 科技 | 高品質圖片和影片 |
+| The New York Times | `nytimes` | 新聞 | 大量文字貼文 |
+| National Geographic | `natgeo` | 攝影 | 精美照片 |
+| NASA Earth | `nasaearth` | 科學 | 地球科學圖片 |
+| Humans of New York | `humansofnewyork` | 人文 | 故事性貼文 |
+
+### 📈 版本更新
+
+**v2.0 (2025-10-20) - 重大更新**
+
+新增功能：
+- ✅ 照片收集功能 (`facebook-photos-scraper`)
+- ✅ OCR 文字識別
+- ✅ 聯絡資訊欄位 (Email, Phone, Location)
+- ✅ 智慧認證判斷
+- ✅ 多格式時間解析
+- ✅ 媒體去重處理
+- ✅ 重試機制 (10次)
+- ✅ RESIDENTIAL 代理支援
+
+資料完整度提升：
+- 專頁資料: 8 個欄位 → 15 個欄位 (+87.5%)
+- 貼文資料: 新增作者名稱、多 URL fallback
+- 媒體解析: 支援縮圖、連結圖片 + 去重
+
+### 📚 相關文件
+
+- `platforms/facebook_collector.py` - 收集器實作
+- `examples/test_facebook_collector.py` - 測試範例
+- `config/platform_config.py` - 設定檔
 
 ---
 

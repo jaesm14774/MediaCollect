@@ -132,7 +132,11 @@ class SocialMediaCrawler:
         username: str,
         post_limit: Optional[int] = None,
         story_limit: Optional[int] = None,
-        download_media: Optional[bool] = None
+        photo_limit: Optional[int] = None,
+        download_media: Optional[bool] = None,
+        posts_newer_than: Optional[str] = None,
+        posts_older_than: Optional[str] = None,
+        caption_text: Optional[bool] = None
     ) -> CollectionResult:
         """
         收集指定使用者的資料
@@ -142,7 +146,11 @@ class SocialMediaCrawler:
             username: 使用者名稱
             post_limit: 貼文數量限制 (None 使用設定檔的值)
             story_limit: 限時動態數量限制
+            photo_limit: 照片數量限制 (僅適用於 Facebook)
             download_media: 是否下載媒體
+            posts_newer_than: 只抓取此日期之後的貼文 (僅適用於 Facebook)
+            posts_older_than: 只抓取此日期之前的貼文 (僅適用於 Facebook)
+            caption_text: 是否提取影片字幕 (僅適用於 Facebook)
         
         返回:
             CollectionResult 物件
@@ -153,8 +161,16 @@ class SocialMediaCrawler:
                 post_limit = get_platform_setting(platform, 'post_limit', 50)
             if story_limit is None:
                 story_limit = get_platform_setting(platform, 'story_limit')
+            if photo_limit is None:
+                photo_limit = get_platform_setting(platform, 'photo_limit')
             if download_media is None:
                 download_media = get_platform_setting(platform, 'download_media', True)
+            if posts_newer_than is None:
+                posts_newer_than = get_platform_setting(platform, 'posts_newer_than')
+            if posts_older_than is None:
+                posts_older_than = get_platform_setting(platform, 'posts_older_than')
+            if caption_text is None:
+                caption_text = get_platform_setting(platform, 'caption_text', False)
             
             # 建立收集器
             logger.info(f"{'='*60}")
@@ -180,7 +196,12 @@ class SocialMediaCrawler:
             result = collector.collect_all(
                 post_limit=post_limit,
                 story_limit=story_limit,
-                include_stories=(story_limit is not None or story_limit != 0)
+                include_stories=(story_limit is not None or story_limit != 0),
+                photo_limit=photo_limit,
+                include_photos=(photo_limit is not None and photo_limit > 0),
+                posts_newer_than=posts_newer_than,
+                posts_older_than=posts_older_than,
+                caption_text=caption_text
             )
             
             # 儲存到資料庫
