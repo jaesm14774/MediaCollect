@@ -33,6 +33,10 @@
 - ✅ **資料庫整合**: 自動儲存至 MySQL 資料庫（統一資料結構）
 - ✅ **增量更新**: 智能比對，只更新變更的資料
 - ✅ **欄位值轉換**: 自訂義轉換規則，將難以理解的代碼轉為易讀格式
+- ✅ **日誌記錄**: 完整的日誌系統，按日期自動分檔
+- ✅ **收集歷史追蹤**: 記錄每次收集的執行狀況、成功率、執行時長等
+- ✅ **多進程平行處理**: 真正的多核心並行處理，適合處理 Apify Actor 阻塞情況
+- ✅ **異步並發**: 支援多使用者同時收集（協程並發）
 
 ### 🏗️ 架構特色
 
@@ -41,6 +45,7 @@
 - 🔧 **通用資料模型**: 跨平台統一的資料結構
 - 🔧 **易於擴展**: 新增平台只需實作 4 個核心方法
 - 🔧 **模組化設計**: 核心、平台、工具完全分離
+- 🔧 **完整監控**: 日誌記錄 + 歷史追蹤，方便除錯與效能分析
 
 ---
 
@@ -75,6 +80,7 @@ social_media_crawler/
 │   └── threads_collector.py      # Threads 收集器
 │
 ├── lib/                           # 工具模組
+│   ├── logger.py                 # 日誌管理模組（新增）
 │   ├── media_downloader.py       # 媒體下載工具
 │   ├── get_sql_connection.py     # 資料庫連接
 │   └── discord_notify.py         # Discord 通知
@@ -84,8 +90,10 @@ social_media_crawler/
 │   └── platform_config.py        # 各平台設定
 │
 ├── main.py                        # 主程式入口
+├── query_collection_history.py   # 收集歷史查詢工具（新增）
 ├── example_unified.py             # 使用範例
 ├── init_unified_database.sql     # 資料庫初始化腳本
+├── LOG_FEATURE.md                # 日誌功能說明文件（新增）
 └── requirements.txt               # 依賴套件
 ```
 
@@ -257,7 +265,26 @@ python main.py --mode daily
 
 # 使用自訂配置檔
 python main.py --mode daily --accounts-file my_accounts.txt
+
+# 🚀 多進程平行處理（推薦！真正的平行處理）
+python main.py --mode daily --multiprocess --num-processes 4
+
+# 異步並發模式（協程並發）
+python main.py --mode daily --async --concurrent-limit 3
 ```
+
+> 💡 **效能提升**：
+> 
+> **多進程模式（`--multiprocess`）**：
+> - 真正的多核心平行處理，每個使用者在獨立進程中執行
+> - **最適合處理 Apify Actor 阻塞等待的情況**（如時間篩選導致重啟）
+> - 即使單個任務被阻塞，其他進程仍繼續執行
+> - 可以充分利用多核心 CPU
+> 
+> **異步模式（`--async`）**：
+> - 協程並發，共用單一進程
+> - 適合 I/O 密集但不會長時間阻塞的任務
+> - 如果 Apify Actor 會阻塞等待，效果有限
 
 **配置檔格式 (`accounts.txt`):**
 
@@ -295,6 +322,12 @@ python main.py --mode single --platform instagram --username nasa --post-limit 1
 
 # 批次處理（從資料庫讀取）
 python main.py --mode batch --platform twitter
+
+# 批次處理（多進程模式，推薦）
+python main.py --mode batch --platform instagram --multiprocess --num-processes 4
+
+# 批次處理（異步並發模式）
+python main.py --mode batch --platform instagram --async --concurrent-limit 5
 
 # 所有平台批次處理（從資料庫讀取）
 python main.py --mode all
@@ -740,6 +773,16 @@ SELECT * FROM social_users WHERE username = 'example';
 
 ## 📝 更新紀錄
 
+### v2.3.0 (2025-10) - 多進程與異步並發功能 🚀
+
+- ✅ 新增多進程平行處理模式（`--multiprocess`）
+- ✅ 真正的多核心並行，適合處理 Apify Actor 阻塞情況
+- ✅ `--num-processes` 參數控制進程數量（預設使用 CPU 核心數）
+- ✅ 新增異步並發收集模式（`--async`）
+- ✅ `--concurrent-limit` 參數控制並發數量
+- ✅ 支援 `daily` 和 `batch` 模式
+- ✅ 使用 Python `multiprocessing` 實現真正平行處理
+
 ### v2.2.0 (2024-10) - 帳號配置檔功能
 
 - ✅ 新增帳號配置檔支援 (`accounts.txt`)
@@ -783,6 +826,77 @@ SELECT * FROM social_users WHERE username = 'example';
 ## 📄 授權
 
 本專案僅供學習和研究使用。使用前請確保遵守各社群平台和 Apify 的服務條款。
+
+---
+
+## 📊 日誌與監控
+
+### 日誌系統
+
+本專案內建完整的日誌記錄功能，所有執行過程都會自動記錄到檔案和 console。
+
+**日誌檔案位置**: `logs/MediaCollect_YYYYMMDD.log`
+
+**查看即時日誌**:
+```bash
+tail -f logs/MediaCollect_20251019.log
+```
+
+**搜尋錯誤記錄**:
+```bash
+grep "ERROR" logs/MediaCollect_20251019.log
+```
+
+### 收集歷史記錄
+
+每次收集任務都會記錄到 `collection_history` 資料表，包含：
+- 平台與使用者名稱
+- 成功或失敗狀態
+- 收集的貼文數與限時動態數
+- 執行時長（秒）
+- 錯誤訊息（如果失敗）
+
+**使用查詢工具**:
+```bash
+python query_collection_history.py
+```
+
+提供以下查詢功能：
+1. 最近收集記錄
+2. 失敗記錄
+3. 平台成功率統計
+4. 效能統計
+5. 特定使用者歷史
+6. 今日收集摘要
+
+**SQL 查詢範例**:
+
+```sql
+-- 查看今日收集記錄
+SELECT * FROM collection_history 
+WHERE DATE(started_at) = CURDATE()
+ORDER BY started_at DESC;
+
+-- 統計平台成功率
+SELECT 
+    platform,
+    COUNT(*) as total,
+    SUM(success) as success_count,
+    ROUND(SUM(success) / COUNT(*) * 100, 2) as success_rate
+FROM collection_history 
+GROUP BY platform;
+
+-- 查看平均執行時長
+SELECT 
+    platform,
+    AVG(duration_seconds) as avg_duration,
+    AVG(post_count) as avg_posts
+FROM collection_history 
+WHERE success = 1
+GROUP BY platform;
+```
+
+詳細說明請參閱 [LOG_FEATURE.md](LOG_FEATURE.md)
 
 ---
 

@@ -17,6 +17,10 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.platform_config import apply_field_transformers
 
+# 導入 logger
+from lib.logger import get_logger
+logger = get_logger('DatabaseManager')
+
 
 class DatabaseManager:
     """
@@ -58,7 +62,7 @@ class DatabaseManager:
             f'mysql+mysqldb://{user}:{quote_plus(password)}@{host}:{port}/{database}?charset=utf8mb4'
         )
         
-        print(f"[Database] 已連接到資料庫: {database}@{host}:{port}")
+        logger.info(f"已連接到資料庫: {database}@{host}:{port}")
     
     def close(self):
         """關閉資料庫連接"""
@@ -66,7 +70,7 @@ class DatabaseManager:
             self.cursor.close()
         if self.conn:
             self.conn.close()
-        print("[Database] 已關閉資料庫連接")
+        logger.info("已關閉資料庫連接")
     
     # =========================================================================
     # 使用者管理
@@ -91,7 +95,7 @@ class DatabaseManager:
         df = pd.DataFrame([user_data])
         df.to_sql('social_users', self.engine, if_exists='append', index=False)
         
-        print(f"[Database] 已儲存使用者歷史記錄: {user.username}")
+        logger.info(f"已儲存使用者歷史記錄: {user.username}")
     
     
     # =========================================================================
@@ -106,7 +110,7 @@ class DatabaseManager:
             posts: SocialPost 物件列表
         """
         if not posts:
-            print("[Database] 沒有貼文需要儲存")
+            logger.info("沒有貼文需要儲存")
             return
         
         # 轉換為 DataFrame
@@ -131,7 +135,7 @@ class DatabaseManager:
             primary_keys=['platform', 'post_id']
         )
         
-        print(f"[Database] 已儲存 {len(posts)} 筆貼文")
+        logger.info(f"已儲存 {len(posts)} 筆貼文")
     
     def save_stories(self, stories: List[SocialPost]):
         """
@@ -141,7 +145,7 @@ class DatabaseManager:
             stories: SocialPost 物件列表
         """
         if not stories:
-            print("[Database] 沒有限時動態需要儲存")
+            logger.info("沒有限時動態需要儲存")
             return
         
         # 轉換為 DataFrame
@@ -184,7 +188,7 @@ class DatabaseManager:
             primary_keys=['platform', 'post_id']
         )
         
-        print(f"[Database] 已儲存 {len(stories)} 筆限時動態")
+        logger.info(f"已儲存 {len(stories)} 筆限時動態")
     
     def _update_table(
         self, 
@@ -236,10 +240,10 @@ class DatabaseManager:
             # Step 3: 插入新資料
             df.to_sql(table_name, self.engine, index=False, if_exists='append')
             
-            print(f"[Database] 已更新 {table_name} 表，共 {len(df)} 筆資料")
+            logger.info(f"已更新 {table_name} 表，共 {len(df)} 筆資料")
         
         except Exception as e:
-            print(f"[Database] 更新表格失敗: {e}")
+            logger.error(f"更新表格失敗: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -259,7 +263,7 @@ class DatabaseManager:
             是否成功儲存
         """
         if not result.success:
-            print(f"[Database] 收集失敗，不儲存資料: {result.error_message}")
+            logger.warning(f"收集失敗，不儲存資料: {result.error_message}")
             return False
         
         try:
@@ -267,7 +271,7 @@ class DatabaseManager:
             if result.user:
                 self.save_user(result.user)
             else:
-                print("[Database] 警告: 沒有使用者資料")
+                logger.warning("沒有使用者資料")
                 return False
             
             # 2. 儲存貼文
@@ -278,11 +282,11 @@ class DatabaseManager:
             if result.stories:
                 self.save_stories(result.stories)
             
-            print(f"[Database] 成功儲存 {result.platform.value} 平台的收集結果")
+            logger.info(f"成功儲存 {result.platform.value} 平台的收集結果")
             return True
         
         except Exception as e:
-            print(f"[Database] 儲存收集結果失敗: {e}")
+            logger.error(f"儲存收集結果失敗: {e}")
             import traceback
             traceback.print_exc()
             return False
@@ -338,6 +342,63 @@ class DatabaseManager:
         """
         df = pd.read_sql_query(query, self.engine, params=(platform, username, limit))
         return df
+    
+    # =========================================================================
+    # 收集歷史記錄管理
+    # =========================================================================
+    
+    def save_collection_history(
+        self,
+        platform: str,
+        username: str,
+        success: bool,
+        post_count: int = 0,
+        story_count: int = 0,
+        error_message: Optional[str] = None,
+        started_at: Optional[datetime.datetime] = None,
+        finished_at: Optional[datetime.datetime] = None,
+        duration_seconds: Optional[int] = None
+    ) -> bool:
+        """
+        儲存收集歷史記錄到 collection_history 資料表
+        
+        參數:
+            platform: 平台類型
+            username: 使用者名稱
+            success: 是否成功
+            post_count: 收集的貼文數
+            story_count: 收集的限時動態數
+            error_message: 錯誤訊息
+            started_at: 開始時間
+            finished_at: 完成時間
+            duration_seconds: 執行時長（秒）
+        
+        返回:
+            是否成功儲存
+        """
+        try:
+            history_data = {
+                'platform': platform,
+                'username': username,
+                'success': 1 if success else 0,
+                'post_count': post_count,
+                'story_count': story_count,
+                'error_message': error_message,
+                'started_at': started_at,
+                'finished_at': finished_at,
+                'duration_seconds': duration_seconds
+            }
+            
+            df = pd.DataFrame([history_data])
+            df.to_sql('collection_history', self.engine, if_exists='append', index=False)
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"儲存收集歷史記錄失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def __enter__(self):
         """支援 with 語句"""

@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS social_posts (
     primary_media_url TEXT COMMENT '主要媒體 URL',
     sub_image_url TEXT COMMENT '子圖片 URL 列表 (用逗號分隔)',
     sub_video_url TEXT COMMENT '子影片 URL 列表 (用逗號分隔)',
+    sub_thumbnail_url TEXT COMMENT '子縮圖 URL 列表 (用逗號分隔)',
     
     -- 互動數據
     like_count INT DEFAULT 0 COMMENT '按讚數',

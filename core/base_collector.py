@@ -9,6 +9,12 @@ from .data_models import (
     CollectionResult, ContentType
 )
 import pandas as pd
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# 導入 logger
+from lib.logger import get_logger
+logger = get_logger('Collector')
 
 
 class BaseSocialMediaCollector(ABC):
@@ -148,51 +154,103 @@ class BaseSocialMediaCollector(ABC):
         返回:
             CollectionResult 物件
         """
+        from datetime import datetime
+        
+        # 記錄開始時間
+        started_at = datetime.now()
+        
         try:
             # 1. 抓取使用者資料
-            print(f"[{self.platform.value}] 開始抓取使用者 {self.username} 的資料...")
+            logger.info(f"[{self.platform.value}] 開始抓取使用者 {self.username} 的資料...")
             user = self.fetch_user_profile()
             
             if not user:
+                finished_at = datetime.now()
+                duration = int((finished_at - started_at).total_seconds())
+                
                 return CollectionResult(
                     platform=self.platform,
                     success=False,
-                    error_message=f"無法取得使用者 {self.username} 的資料"
+                    error_message=f"無法取得使用者 {self.username} 的資料",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_seconds=duration
                 )
             
             self.user_info = user
-            print(f"  ✓ 使用者資料: {user.display_name or user.username}")
+            logger.info(f"  ✓ 使用者資料: {user.display_name or user.username}")
             
             # 2. 抓取貼文
-            print(f"[{self.platform.value}] 開始抓取貼文（限制: {post_limit} 筆）...")
+            logger.info(f"[{self.platform.value}] 開始抓取貼文（限制: {post_limit} 筆）...")
             posts = self.fetch_posts(limit=post_limit)
-            print(f"  ✓ 成功抓取 {len(posts)} 筆貼文")
+            logger.info(f"  ✓ 成功抓取 {len(posts)} 筆貼文")
             
             # 3. 抓取限時動態（如果支援）
             stories = []
             if include_stories:
-                print(f"[{self.platform.value}] 開始抓取限時動態...")
+                logger.info(f"[{self.platform.value}] 開始抓取限時動態...")
                 stories = self.fetch_stories(limit=story_limit)
-                print(f"  ✓ 成功抓取 {len(stories)} 筆限時動態")
+                logger.info(f"  ✓ 成功抓取 {len(stories)} 筆限時動態")
+            
+            # 計算執行時長
+            finished_at = datetime.now()
+            duration = int((finished_at - started_at).total_seconds())
             
             return CollectionResult(
                 platform=self.platform,
                 success=True,
                 user=user,
                 posts=posts,
-                stories=stories
+                stories=stories,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration
             )
         
         except Exception as e:
             import traceback
             error_msg = f"收集失敗: {str(e)}\n{traceback.format_exc()}"
-            print(f"[錯誤] {error_msg}")
+            logger.error(f"[錯誤] {error_msg}")
+            
+            # 計算執行時長
+            finished_at = datetime.now()
+            duration = int((finished_at - started_at).total_seconds())
             
             return CollectionResult(
                 platform=self.platform,
                 success=False,
-                error_message=error_msg
+                error_message=error_msg,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration
             )
+    
+    async def collect_all_async(
+        self, 
+        post_limit: int = 50, 
+        story_limit: Optional[int] = None,
+        include_stories: bool = True
+    ) -> CollectionResult:
+        """
+        執行完整的資料收集流程（異步版本）
+        
+        在線程池中執行同步收集方法，避免阻塞事件循環
+        
+        參數:
+            post_limit: 要抓取的貼文數量
+            story_limit: 要抓取的限時動態數量
+            include_stories: 是否抓取限時動態
+        
+        返回:
+            CollectionResult 物件
+        """
+        # 在線程池中執行同步方法
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,  # 使用默認線程池
+            lambda: self.collect_all(post_limit, story_limit, include_stories)
+        )
+        return result
     
     def validate_username(self) -> bool:
         """
@@ -252,8 +310,8 @@ class ApifyBasedCollector(BaseSocialMediaCollector):
             結果資料列表
         """
         try:
-            print(f"  [Apify] 呼叫 Actor: {actor_id}")
-            print(f"  [Apify] 輸入參數: {run_input}")
+            logger.info(f"  [Apify] 呼叫 Actor: {actor_id}")
+            logger.debug(f"  [Apify] 輸入參數: {run_input}")
             
             # 執行 Actor
             run = self.apify_client.actor(actor_id).call(
@@ -264,7 +322,7 @@ class ApifyBasedCollector(BaseSocialMediaCollector):
             # 檢查執行狀態
             run_status = run.get("status")
             if run_status != "SUCCEEDED":
-                print(f"  [Apify] ⚠ Actor 執行狀態異常: {run_status}")
+                logger.warning(f"  [Apify] Actor 執行狀態異常: {run_status}")
                 # 即使狀態異常，仍嘗試取得資料
             
             # 取得結果
@@ -274,15 +332,15 @@ class ApifyBasedCollector(BaseSocialMediaCollector):
             
             # 根據結果數量輸出不同訊息
             if len(items) == 0:
-                print(f"  [Apify] ✓ 執行完成，但無符合條件的資料（可能是正常情況）")
+                logger.info(f"  [Apify] 執行完成，但無符合條件的資料（可能是正常情況）")
             else:
-                print(f"  [Apify] ✓ 成功取得 {len(items)} 筆資料")
+                logger.info(f"  [Apify] 成功取得 {len(items)} 筆資料")
             
             return items
         
         except Exception as e:
-            print(f"  [Apify] ✗ 呼叫失敗: {e}")
-            print(f"  [Apify] ℹ 將返回空資料，繼續執行其他任務")
+            logger.error(f"  [Apify] 呼叫失敗: {e}")
+            logger.info(f"  [Apify] 將返回空資料，繼續執行其他任務")
             import traceback
             traceback.print_exc()
             return []

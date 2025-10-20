@@ -240,14 +240,19 @@ class CollectionResult:
     stories: List[SocialPost] = field(default_factory=list)
     error_message: Optional[str] = None
     collected_at: datetime = field(default_factory=datetime.now)
+    started_at: Optional[datetime] = None       # 開始時間
+    finished_at: Optional[datetime] = None      # 完成時間
+    duration_seconds: Optional[int] = None      # 執行時長（秒）
     
     def __str__(self) -> str:
         if self.success:
+            duration_str = f"{self.duration_seconds}秒" if self.duration_seconds else "N/A"
             return (
                 f"收集成功 [{self.platform.value}]\n"
                 f"  使用者: {self.user.username if self.user else 'N/A'}\n"
                 f"  貼文數: {len(self.posts)}\n"
                 f"  限時動態數: {len(self.stories)}\n"
+                f"  執行時長: {duration_str}\n"
                 f"  收集時間: {self.collected_at.strftime('%Y-%m-%d %H:%M:%S')}"
             )
         else:

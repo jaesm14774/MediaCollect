@@ -71,6 +71,11 @@ class InstagramCollector(ApifyBasedCollector):
             
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
+            # 處理 category 欄位（避免字串 "None" 的問題）
+            category_value = raw.get('businessCategoryName')
+            if category_value == "None" or category_value == "null":
+                category_value = None
+            
             user = PlatformUser(
                 platform=PlatformType.INSTAGRAM,
                 user_id=raw.get('id', ''),
@@ -81,7 +86,7 @@ class InstagramCollector(ApifyBasedCollector):
                 is_business=raw.get('isBusinessAccount', False),
                 description=raw.get('biography', ''),
                 profile_image_url=raw.get('profilePicUrlHD') or raw.get('profilePicUrl'),
-                category=raw.get('businessCategoryName'),
+                category=category_value,
                 follower_count=raw.get('followersCount', 0),
                 following_count=raw.get('followsCount', 0),
                 post_count=raw.get('postsCount', 0),

@@ -3,10 +3,13 @@
 """
 import random
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# 載入環境變數
-load_dotenv()
+# 載入專案目錄下的 .env 檔案
+project_root = Path(__file__).parent.parent
+dotenv_path = project_root / '.env'
+load_dotenv(dotenv_path=dotenv_path)
 
 # ============================================================================
 # Apify API Tokens
@@ -192,6 +195,12 @@ def apply_field_transformers(data_dict: dict) -> dict:
     """
     transformed = data_dict.copy()
     
+    # 先處理所有欄位，將字串 "None" 轉換為真正的 None
+    for key, value in transformed.items():
+        if value == "None" or value == "null" or value == "NULL":
+            transformed[key] = None
+    
+    # 再套用特定欄位的轉換規則
     for field_name, transformer_func in FIELD_TRANSFORMERS.items():
         if field_name in transformed:
             try:

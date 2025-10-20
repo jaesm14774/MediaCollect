@@ -31,7 +31,8 @@ ENV/
 Thumbs.db
 desktop.ini
 
-# 日誌檔案
+# 日誌檔案目錄
+logs/
 *.log
 
 # 資料庫檔案
