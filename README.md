@@ -18,6 +18,7 @@
 - [欄位轉換功能](#-欄位轉換功能)
 - [API 說明](#-api-說明)
 - [常見問題](#-常見問題)
+- [Instagram Hashtag 收集器使用指南](#-instagram-hashtag-收集器使用指南)
 - [Facebook 收集器完整使用手冊](#-facebook-收集器完整使用手冊)
 
 ---
@@ -54,7 +55,7 @@
 
 | 平台 | 狀態 | 支援功能 | Apify Actor |
 |------|------|----------|-------------|
-| **Instagram** | ✅ 完整支援 | 使用者資訊、貼文、限時動態、輪播 | apify/instagram-profile-scraper<br>apify/instagram-post-scraper<br>igview-owner/instagram-story-viewer |
+| **Instagram** | ✅ 完整支援 | 使用者資訊、貼文、限時動態、輪播、Hashtag 主題追蹤 | apify/instagram-profile-scraper<br>apify/instagram-post-scraper<br>igview-owner/instagram-story-viewer<br>apify/instagram-hashtag-scraper |
 | **Facebook** | ✅ 完整支援 | 粉絲專頁資訊、貼文、照片 (含OCR) | apify/facebook-pages-scraper<br>apify/facebook-posts-scraper<br>apify/facebook-photos-scraper |
 | **Twitter(X)** | ✅ 支援 | 使用者資訊、推文、轉推 | apify/twitter-scraper |
 | **Threads** | ✅ 支援 | 使用者資訊、串文 | apify/threads-scraper |
@@ -106,6 +107,7 @@ BaseSocialMediaCollector (抽象基類)
 ApifyBasedCollector (Apify 基類)
     ↓
     ├── InstagramCollector
+    │   └── InstagramHashtagCollector (主題標籤收集器)
     ├── FacebookCollector
     ├── TwitterCollector
     └── ThreadsCollector
@@ -410,6 +412,34 @@ if result.success:
     # 下載媒體
     for post in result.posts:
         collector.download_media(post, 'E:/media/')
+```
+
+#### Instagram Hashtag 主題追蹤範例
+
+```python
+from platforms.instagram_collector import InstagramHashtagCollector
+from config.platform_config import APIFY_TOKEN
+
+# 建立 Instagram Hashtag 收集器
+hashtag_collector = InstagramHashtagCollector(
+    hashtag="travel",  # 要追蹤的主題標籤
+    api_token=APIFY_TOKEN,
+    results_type="posts",  # "posts" 或 "reels"
+    results_limit=50
+)
+
+# 收集 hashtag 貼文
+result = hashtag_collector.collect_hashtag()
+
+print(f"成功: {result.success}")
+print(f"Hashtag: #{result.hashtag}")
+print(f"貼文數: {len(result.posts)}")
+
+# 查看貼文資訊
+for post in result.posts[:5]:
+    print(f"\n作者: @{post.author_username}")
+    print(f"內容: {post.text[:100]}...")
+    print(f"互動: ❤️ {post.like_count} 💬 {post.comment_count}")
 ```
 
 #### Facebook 時間範圍過濾範例
@@ -999,6 +1029,470 @@ GROUP BY platform;
 ```
 
 詳細說明請參閱 [LOG_FEATURE.md](LOG_FEATURE.md)
+
+---
+
+## 📷 Instagram Hashtag 收集器使用指南
+
+> 🎯 追蹤主題標籤，發掘熱門話題 | 📅 最後更新: 2025-10-21
+
+### 🌟 功能說明
+
+Instagram Hashtag 收集器現已支援**單個或多個 hashtag** 的收集功能。Apify 的 Instagram Hashtag Scraper 本身就支援複數 hashtag，因此您可以在一次請求中收集多個 hashtag 的貼文。
+
+`InstagramHashtagCollector` 是專門用於收集特定 hashtag 貼文的收集器，與 `InstagramCollector` 的主要區別：
+
+| 收集器 | 用途 | 追蹤對象 | 使用場景 |
+|--------|------|----------|----------|
+| **InstagramCollector** | 使用者追蹤 | 特定使用者的貼文 | 追蹤品牌、KOL、競爭對手 |
+| **InstagramHashtagCollector** | 主題追蹤 | 特定標籤的貼文 | 追蹤話題、趨勢、活動、產品關鍵字 |
+
+### 🚀 使用方式
+
+#### 1. 命令行模式
+
+##### 單個 Hashtag
+```bash
+python main.py --mode hashtag --platform instagram --hashtag timelessbruno
+```
+
+##### 多個 Hashtag（用逗號分隔）
+```bash
+# 基本用法
+python main.py --mode hashtag --platform instagram --hashtag "timelessbruno,travel,food"
+
+# 指定結果類型和數量
+python main.py --mode hashtag --platform instagram --hashtag "timelessbruno,travel,food" --results-type reels --results-limit 100
+```
+
+**注意事項：**
+- 多個 hashtag 用逗號分隔
+- 建議用引號包圍整個 hashtag 字串（避免命令行解析問題）
+- 可以包含或不包含 # 符號，程式會自動處理
+- `--results-limit` 是指**每個 hashtag** 的結果數量限制
+
+#### 2. 互動式模式
+
+```bash
+python main.py --mode interactive
+```
+
+然後選擇：
+1. 選擇模式 `2` (Hashtag 收集模式)
+2. 選擇平台（例如 Instagram）
+3. 輸入 hashtag（支援單個或多個，用逗號分隔）
+   - 單個範例：`timelessbruno`
+   - 多個範例：`timelessbruno,travel,food`
+4. 選擇結果類型（Posts 或 Reels）
+5. 輸入結果數量限制
+
+#### 3. Python 程式碼調用
+
+##### 單個 Hashtag
+```python
+from platforms.instagram_collector import InstagramHashtagCollector
+from config.platform_config import APIFY_TOKEN
+
+# 初始化收集器
+collector = InstagramHashtagCollector(
+    hashtag="timelessbruno",
+    api_token=APIFY_TOKEN,
+    results_type="posts",    # "posts" 或 "reels"
+    results_limit=50
+)
+
+# 收集貼文
+result = collector.collect_hashtag()
+
+# 查看結果
+print(f"✓ 成功收集 #{result.hashtag} 的 {len(result.posts)} 則貼文")
+```
+
+##### 多個 Hashtag（逗號分隔字串）
+```python
+from main import SocialMediaCrawler
+
+crawler = SocialMediaCrawler()
+result = crawler.collect_hashtag(
+    platform="instagram",
+    hashtag="timelessbruno,travel,food",
+    results_type="posts",
+    results_limit=50
+)
+```
+
+##### 多個 Hashtag（列表）
+```python
+result = crawler.collect_hashtag(
+    platform="instagram",
+    hashtag=["timelessbruno", "travel", "food"],
+    results_type="posts",
+    results_limit=50
+)
+```
+
+#### 4. 儲存到資料庫
+
+```python
+from core.database_manager import create_database_manager_from_config
+from config.platform_config import SQL_CONFIGURE_PATH
+
+# 收集資料
+collector = InstagramHashtagCollector(
+    hashtag="python",
+    api_token=APIFY_TOKEN
+)
+result = collector.collect_hashtag()
+
+# 儲存到資料庫
+if result.success:
+    with create_database_manager_from_config(SQL_CONFIGURE_PATH) as db:
+        db.save_hashtag_collection_result(result)
+    print(f"✓ 已儲存 {len(result.posts)} 則貼文到資料庫")
+```
+
+### 🔧 技術細節
+
+#### 支援的輸入格式
+
+程式會自動識別並處理以下三種格式：
+
+1. **單個 hashtag（字串）**
+   ```python
+   hashtag = "timelessbruno"
+   ```
+
+2. **多個 hashtag（逗號分隔字串）**
+   ```python
+   hashtag = "timelessbruno,travel,food"
+   ```
+
+3. **多個 hashtag（列表）**
+   ```python
+   hashtag = ["timelessbruno", "travel", "food"]
+   ```
+
+#### 自動處理
+
+程式會自動處理：
+- 移除 # 符號（如果有）
+- 去除空白字元
+- 統一轉換為列表格式傳給 Apify Actor
+
+#### Apify Actor 參數
+
+最終傳給 Apify Instagram Hashtag Scraper 的參數格式：
+```json
+{
+  "hashtags": ["timelessbruno", "travel", "food"],
+  "resultsType": "posts",
+  "resultsLimit": 50
+}
+```
+
+### 📊 資料結構
+
+#### HashtagPost 物件欄位
+
+```python
+{
+    'platform': 'instagram',
+    'post_id': 'CX1234567',
+    'content_type': 'post',  # 或 'reel'
+    'author_id': '123456789',
+    'author_username': 'user123',
+    'author_display_name': 'User Name',
+    'text': '貼文內容...',
+    'hashtag': 'travel',  # 收集時使用的 hashtag
+    'hashtags': ['travel', 'photography', 'nature'],  # 貼文中的所有標籤
+    'mentions': ['user1', 'user2'],  # 提及的使用者
+    'like_count': 1234,
+    'comment_count': 56,
+    'view_count': 5678,
+    'share_count': 12,
+    'comments_disabled': False,
+    'is_promoted': False,  # 是否為廣告貼文
+    'location_name': 'Tokyo, Japan',
+    'created_at': datetime(2025, 10, 21, 12, 0, 0),
+    'post_url': 'https://www.instagram.com/p/CX1234567/',
+    'media_items': [...]  # MediaItem 物件列表
+}
+```
+
+### 📝 範例
+
+#### 收集旅遊相關的多個 hashtag
+```bash
+python main.py --mode hashtag --platform instagram --hashtag "travel,travelgram,wanderlust,vacation" --results-limit 100
+```
+
+#### 收集美食相關的 Reels
+```bash
+python main.py --mode hashtag --platform instagram --hashtag "food,foodie,foodporn,instafood" --results-type reels --results-limit 50
+```
+
+### 🎯 使用場景範例
+
+#### 場景 1: 品牌監控
+
+```python
+# 追蹤品牌相關話題
+brand_hashtags = ['nike', 'justdoit', 'nikeshoes']
+
+for tag in brand_hashtags:
+    collector = InstagramHashtagCollector(tag, APIFY_TOKEN, results_limit=100)
+    result = collector.collect_hashtag()
+    
+    print(f"\n#{tag}: {len(result.posts)} 則貼文")
+    
+    # 找出互動最高的貼文
+    top_posts = sorted(result.posts, key=lambda p: p.like_count, reverse=True)[:5]
+    for post in top_posts:
+        print(f"  - @{post.author_username}: ❤️ {post.like_count:,}")
+```
+
+#### 場景 2: 趨勢分析
+
+```python
+# 收集熱門話題
+trending_tag = "ai"
+collector = InstagramHashtagCollector(
+    hashtag=trending_tag,
+    api_token=APIFY_TOKEN,
+    results_limit=200
+)
+result = collector.collect_hashtag()
+
+# 分析發文時間分布
+from collections import Counter
+import datetime
+
+hour_counts = Counter()
+for post in result.posts:
+    if post.created_at:
+        hour_counts[post.created_at.hour] += 1
+
+print("發文時間分布:")
+for hour in sorted(hour_counts.keys()):
+    print(f"{hour:02d}:00 - {hour_counts[hour]} 則貼文 {'█' * hour_counts[hour]}")
+```
+
+#### 場景 3: KOL 發掘
+
+```python
+# 找出特定主題的活躍創作者
+collector = InstagramHashtagCollector("foodphotography", APIFY_TOKEN, results_limit=100)
+result = collector.collect_hashtag()
+
+# 統計創作者
+from collections import defaultdict
+creators = defaultdict(list)
+
+for post in result.posts:
+    creators[post.author_username].append(post)
+
+# 找出發文最多的創作者
+top_creators = sorted(creators.items(), key=lambda x: len(x[1]), reverse=True)[:10]
+
+print("\n最活躍創作者:")
+for username, posts in top_creators:
+    avg_likes = sum(p.like_count for p in posts) / len(posts)
+    print(f"@{username}: {len(posts)} 則貼文 | 平均互動: {avg_likes:,.0f}")
+```
+
+### ⚙️ 參數說明
+
+#### 初始化參數
+
+| 參數 | 類型 | 說明 | 預設值 |
+|------|------|------|--------|
+| `hashtag` | str/list | 要追蹤的 hashtag（可含或不含 #，支援單個或多個） | 必填 |
+| `api_token` | str | Apify API Token | 必填 |
+| `results_type` | str | 結果類型：`"posts"` 或 `"reels"` | `"posts"` |
+| `results_limit` | int | 抓取數量限制 | `50` |
+
+#### collect_hashtag() 方法參數
+
+```python
+result = collector.collect_hashtag(
+    hashtag=None,         # 可覆蓋初始化的 hashtag
+    results_type=None,    # 可覆蓋初始化的 results_type
+    results_limit=None    # 可覆蓋初始化的 results_limit
+)
+```
+
+### ❓ 常見問題
+
+#### Q1: InstagramHashtagCollector 和 InstagramCollector 有什麼區別？
+
+**A:** 
+- `InstagramCollector`: 追蹤**特定使用者**的所有貼文
+- `InstagramHashtagCollector`: 追蹤**特定主題標籤**的所有貼文（來自不同使用者）
+
+#### Q2: 每個 hashtag 會收集多少貼文？
+
+**A:** `--results-limit` 參數指定的是 Apify Actor 的結果總數限制，實際上會在所有 hashtag 之間分配。具體分配方式由 Apify 決定。
+
+#### Q3: 可以混合使用帶 # 和不帶 # 的 hashtag 嗎？
+
+**A:** 可以，程式會自動處理。例如 `#travel,food,#photo` 會被處理為 `travel,food,photo`。
+
+#### Q4: 有數量限制嗎？
+
+**A:** 理論上沒有限制，但建議一次不要超過 10 個 hashtag，以確保 Apify Actor 的穩定性和效能。
+
+#### Q5: results_type 選 "posts" 還是 "reels"？
+
+**A:**
+- `"posts"`: 一般貼文（圖片、影片、輪播）
+- `"reels"`: 只收集 Reels 短影片
+
+如果不確定，建議使用 `"posts"`（包含所有類型）。
+
+#### Q6: 收集的貼文會重複嗎？
+
+**A:** 資料庫使用 `(platform, post_id)` 作為唯一鍵，重複的貼文會自動更新而不會重複儲存。
+
+#### Q7: 可以過濾時間範圍嗎？
+
+**A:** Apify 的 hashtag scraper 目前不支援時間過濾。建議收集後再用程式碼過濾：
+
+```python
+result = collector.collect_hashtag()
+
+# 只保留最近 7 天的貼文
+from datetime import datetime, timedelta
+seven_days_ago = datetime.now() - timedelta(days=7)
+
+recent_posts = [
+    post for post in result.posts 
+    if post.created_at and post.created_at >= seven_days_ago
+]
+```
+
+#### Q8: 如何儲存到資料庫？
+
+**A:** hashtag 貼文會儲存到 `social_hashtag_posts` 資料表：
+
+```python
+with create_database_manager_from_config(SQL_CONFIGURE_PATH) as db:
+    db.save_hashtag_collection_result(result)
+```
+
+#### Q9: 消耗多少 Apify 配額？
+
+**A:** 
+- 50 則貼文：約 30-60 秒
+- 100 則貼文：約 60-120 秒
+
+Free tier 用戶建議設定 `results_limit=50`。
+
+#### Q10: 支援其他平台嗎？
+
+**A:** 目前只有 Instagram 支援 hashtag 收集功能。其他平台的支援取決於對應的 Apify Actor 是否提供相關功能。
+
+### 💾 資料庫儲存
+
+收集到的貼文會儲存到 `social_hashtag_posts` 資料表中，其中 `hashtag` 欄位會以逗號分隔的形式儲存所有查詢的 hashtag：
+
+```
+hashtag: "timelessbruno,travel,food"
+```
+
+這樣可以清楚知道該筆貼文是透過哪些 hashtag 查詢得到的。
+
+### 💡 最佳實踐
+
+#### 1. 批次收集多個 hashtag
+
+```python
+hashtags = ['travel', 'photography', 'nature', 'adventure']
+
+for tag in hashtags:
+    print(f"\n收集 #{tag}...")
+    collector = InstagramHashtagCollector(tag, APIFY_TOKEN, results_limit=50)
+    result = collector.collect_hashtag()
+    
+    if result.success:
+        # 儲存到資料庫
+        with create_database_manager_from_config(SQL_CONFIGURE_PATH) as db:
+            db.save_hashtag_collection_result(result)
+```
+
+#### 2. 定期排程收集
+
+將以下內容加入 crontab（每天早上 6 點執行）：
+
+```bash
+0 6 * * * cd /path/to/MediaCollect && python scripts/collect_hashtags.py
+```
+
+`scripts/collect_hashtags.py`:
+```python
+from platforms.instagram_collector import InstagramHashtagCollector
+from config.platform_config import APIFY_TOKEN
+
+# 定義要追蹤的 hashtag
+HASHTAGS_TO_TRACK = ['ai', 'machinelearning', 'python', 'programming']
+
+for tag in HASHTAGS_TO_TRACK:
+    collector = InstagramHashtagCollector(tag, APIFY_TOKEN, results_limit=50)
+    result = collector.collect_hashtag()
+    
+    if result.success:
+        print(f"✓ #{tag}: {len(result.posts)} 則貼文")
+```
+
+#### 3. 分析競爭對手的 hashtag 策略
+
+```python
+# 先用 InstagramCollector 收集競爭對手的貼文
+from platforms.instagram_collector import InstagramCollector
+
+competitor_collector = InstagramCollector("competitor_username", APIFY_TOKEN)
+competitor_posts = competitor_collector.fetch_posts(limit=50)
+
+# 提取他們常用的 hashtag
+from collections import Counter
+hashtag_counter = Counter()
+
+for post in competitor_posts:
+    hashtag_counter.update(post.hashtags)
+
+# 追蹤前 10 個熱門 hashtag
+top_hashtags = [tag for tag, count in hashtag_counter.most_common(10)]
+
+for tag in top_hashtags:
+    collector = InstagramHashtagCollector(tag, APIFY_TOKEN, results_limit=30)
+    result = collector.collect_hashtag()
+    print(f"#{tag}: {len(result.posts)} 則貼文")
+```
+
+### 📈 版本更新
+
+**v1.1 (2025-10-21) - 多 Hashtag 支援**
+
+新增功能：
+- ✅ 支援一次收集多個 hashtag（逗號分隔或列表）
+- ✅ 自動處理 # 符號和空白字元
+- ✅ 命令行模式支援多 hashtag
+- ✅ 互動式模式支援多 hashtag
+- ✅ 資料庫儲存時記錄所有查詢的 hashtag
+
+**v1.0 (2025-10-21) - 正式發布**
+
+功能特色：
+- ✅ 獨立的 Hashtag 收集器類別
+- ✅ 繼承 InstagramCollector，重用媒體解析邏輯
+- ✅ 支援 posts 和 reels 兩種類型
+- ✅ 完整的貼文資料（作者、互動數、標籤、提及等）
+- ✅ 支援儲存到資料庫
+- ✅ 詳細的錯誤處理和日誌記錄
+
+設計理念：
+- 🎯 **職責分離**: 使用者追蹤 vs 主題追蹤
+- 🎯 **繼承複用**: 重用父類別的媒體解析、標籤提取等功能
+- 🎯 **獨立功能**: hashtag 相關函數不污染 InstagramCollector
 
 ---
 

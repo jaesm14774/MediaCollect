@@ -15,7 +15,7 @@ from functools import partial
 # 導入核心模組
 from core.factory import CollectorFactory, register_all_collectors
 from core.database_manager import create_database_manager_from_config
-from core.data_models import CollectionResult
+from core.data_models import CollectionResult, HashtagCollectionResult
 
 # 導入設定
 from config.platform_config import (
@@ -125,6 +125,98 @@ class SocialMediaCrawler:
             except:
                 self.discord_token = None
                 print("[警告] 無法載入 Discord 通知設定")
+    
+    def collect_hashtag(
+        self,
+        platform: str,
+        hashtag,
+        results_type: str = "posts",
+        results_limit: int = 50
+    ) -> HashtagCollectionResult:
+        """
+        收集指定 hashtag 的資料
+        
+        參數:
+            platform: 平台名稱 (instagram, ...)
+            hashtag: hashtag（可含或不含 # 符號）
+                    - 單個 hashtag: str，例如 "timelessbruno"
+                    - 多個 hashtag: List[str]，例如 ["timelessbruno", "travel"]
+                    - 逗號分隔字串: str，例如 "timelessbruno,travel,food"
+            results_type: 結果類型 ("posts" 或 "reels")
+            results_limit: 結果數量限制
+        
+        返回:
+            HashtagCollectionResult 物件
+        """
+        try:
+            # 建立 hashtag 收集器
+            logger.info(f"{'='*60}")
+            # 處理 hashtag 顯示
+            if isinstance(hashtag, str):
+                if ',' in hashtag:
+                    hashtag_display = ', '.join(['#' + h.strip().lstrip('#') for h in hashtag.split(',') if h.strip()])
+                else:
+                    hashtag_display = '#' + hashtag.lstrip('#')
+            elif isinstance(hashtag, list):
+                hashtag_display = ', '.join(['#' + str(h).lstrip('#') for h in hashtag])
+            else:
+                hashtag_display = '#' + str(hashtag).lstrip('#')
+            
+            logger.info(f"[{platform.upper()}] 開始收集 hashtag: {hashtag_display}")
+            logger.info(f"{'='*60}")
+            
+            collector = CollectorFactory.create_hashtag_collector(
+                platform=platform,
+                hashtag=hashtag,
+                api_token=APIFY_TOKEN,
+                results_type=results_type,
+                results_limit=results_limit
+            )
+            
+            if not collector:
+                error_msg = f"無法建立 {platform} Hashtag 收集器"
+                logger.error(error_msg)
+                from core.data_models import PlatformType, HashtagCollectionResult
+                return HashtagCollectionResult(
+                    platform=PlatformType(platform.lower()),
+                    hashtag=hashtag.lstrip('#'),
+                    success=False,
+                    error_message=error_msg
+                )
+            
+            # 執行收集
+            result = collector.collect_hashtag()
+            
+            # 下載媒體檔案
+            if result.success and result.posts:
+                logger.info(f"[{platform.upper()}] 開始下載 {len(result.posts)} 個貼文的媒體檔案...")
+                for post in result.posts:
+                    collector.download_media(post, MEDIA_FOLDER_PATH)
+                logger.info(f"[{platform.upper()}] 媒體下載完成")
+            
+            # 儲存到資料庫
+            if result.success:
+                self.db.save_hashtag_collection_result(result)
+            
+            logger.info(f"\n{result}")
+            return result
+        
+        except Exception as e:
+            import traceback
+            error_msg = f"Hashtag 收集失敗: {str(e)}\n{traceback.format_exc()}"
+            logger.error(f"[錯誤] {error_msg}")
+            
+            # 發送錯誤通知
+            if self.discord_token:
+                notify(self.discord_token, f"[{platform.upper()}] Hashtag 收集失敗 - #{hashtag}:\n{str(e)}")
+            
+            from core.data_models import PlatformType, HashtagCollectionResult
+            return HashtagCollectionResult(
+                platform=PlatformType(platform.lower()),
+                hashtag=hashtag.lstrip('#'),
+                success=False,
+                error_message=error_msg
+            )
     
     def collect_user(
         self, 
@@ -814,43 +906,131 @@ def interactive_mode():
     logger.info("通用社群媒體資料收集系統 - 互動式測試")
     logger.info("="*60)
     
-    # 顯示支援的平台
-    supported_platforms = CollectorFactory.get_supported_platforms()
-    logger.info("支援的平台:")
-    for i, platform in enumerate(supported_platforms, 1):
-        logger.info(f"  {i}. {platform.upper()}")
+    # 選擇模式
+    print("\n請選擇收集模式:")
+    print("  1. 使用者收集")
+    print("  2. Hashtag 收集")
     
-    # 選擇平台
-    print("\n請選擇平台 (輸入數字):")
     try:
-        choice = int(input(">>> "))
-        if choice < 1 or choice > len(supported_platforms):
+        mode_choice = int(input(">>> "))
+        if mode_choice not in [1, 2]:
             logger.error("無效的選擇")
             return
-        platform = supported_platforms[choice - 1]
     except:
         logger.error("無效的輸入")
         return
     
-    # 輸入使用者名稱
-    print(f"\n請輸入 {platform.upper()} 使用者名稱:")
-    username = input(">>> ").strip()
+    if mode_choice == 1:
+        # 使用者收集模式
+        # 顯示支援的平台
+        supported_platforms = CollectorFactory.get_supported_platforms()
+        logger.info("\n支援的平台:")
+        for i, platform in enumerate(supported_platforms, 1):
+            logger.info(f"  {i}. {platform.upper()}")
+        
+        # 選擇平台
+        print("\n請選擇平台 (輸入數字):")
+        try:
+            choice = int(input(">>> "))
+            if choice < 1 or choice > len(supported_platforms):
+                logger.error("無效的選擇")
+                return
+            platform = supported_platforms[choice - 1]
+        except:
+            logger.error("無效的輸入")
+            return
+        
+        # 輸入使用者名稱
+        print(f"\n請輸入 {platform.upper()} 使用者名稱:")
+        username = input(">>> ").strip()
+        
+        if not username:
+            logger.error("使用者名稱不能為空")
+            return
+        
+        # 執行收集
+        crawler = SocialMediaCrawler()
+        try:
+            result = crawler.collect_user(platform, username)
+            logger.info("="*60)
+            logger.info("收集結果:")
+            logger.info("="*60)
+            logger.info(str(result))
+            logger.info("="*60)
+        finally:
+            crawler.close()
     
-    if not username:
-        logger.error("使用者名稱不能為空")
-        return
-    
-    # 執行收集
-    crawler = SocialMediaCrawler()
-    try:
-        result = crawler.collect_user(platform, username)
-        logger.info("="*60)
-        logger.info("收集結果:")
-        logger.info("="*60)
-        logger.info(str(result))
-        logger.info("="*60)
-    finally:
-        crawler.close()
+    elif mode_choice == 2:
+        # Hashtag 收集模式
+        # 顯示支援 hashtag 收集的平台
+        supported_hashtag_platforms = CollectorFactory.get_supported_hashtag_platforms()
+        if not supported_hashtag_platforms:
+            logger.error("目前沒有平台支援 hashtag 收集")
+            return
+        
+        logger.info("\n支援 Hashtag 收集的平台:")
+        for i, platform in enumerate(supported_hashtag_platforms, 1):
+            logger.info(f"  {i}. {platform.upper()}")
+        
+        # 選擇平台
+        print("\n請選擇平台 (輸入數字):")
+        try:
+            choice = int(input(">>> "))
+            if choice < 1 or choice > len(supported_hashtag_platforms):
+                logger.error("無效的選擇")
+                return
+            platform = supported_hashtag_platforms[choice - 1]
+        except:
+            logger.error("無效的輸入")
+            return
+        
+        # 輸入 hashtag
+        print(f"\n請輸入 {platform.upper()} hashtag（可含或不含 # 符號）:")
+        print("  提示: 支援單個或多個 hashtag（用逗號分隔）")
+        print("  範例: timelessbruno 或 timelessbruno,travel,food")
+        hashtag = input(">>> ").strip()
+        
+        if not hashtag:
+            logger.error("Hashtag 不能為空")
+            return
+        
+        # 輸入結果類型（僅限 Instagram）
+        results_type = "posts"
+        if platform == "instagram":
+            print("\n請選擇結果類型:")
+            print("  1. Posts (貼文)")
+            print("  2. Reels (短影片)")
+            try:
+                type_choice = int(input(">>> "))
+                if type_choice == 2:
+                    results_type = "reels"
+            except:
+                pass
+        
+        # 輸入結果數量限制
+        print("\n請輸入結果數量限制 (預設: 50):")
+        try:
+            results_limit_input = input(">>> ").strip()
+            results_limit = int(results_limit_input) if results_limit_input else 50
+        except:
+            results_limit = 50
+        
+        # 執行收集
+        crawler = SocialMediaCrawler()
+        try:
+            result = crawler.collect_hashtag(
+                platform=platform, 
+                hashtag=hashtag,
+                results_type=results_type,
+                results_limit=results_limit
+            )
+            logger.info("="*60)
+            logger.info("收集結果:")
+            logger.info("="*60)
+            logger.info(str(result))
+            logger.info("="*60)
+        finally:
+            crawler.close()
 
 
 def main():
@@ -878,6 +1058,13 @@ def main():
   # 單一使用者收集
   python main.py --mode single --platform instagram --username nasa
   
+  # Hashtag 收集（單個）
+  python main.py --mode hashtag --platform instagram --hashtag timelessbruno
+  
+  # Hashtag 收集（多個，用逗號分隔）
+  python main.py --mode hashtag --platform instagram --hashtag "timelessbruno,travel,food"
+  python main.py --mode hashtag --platform instagram --hashtag "timelessbruno,travel,food" --results-type reels --results-limit 100
+  
   # 批次收集（從資料庫讀取使用者）
   python main.py --mode batch --platform twitter
   python main.py --mode batch --platform instagram --multiprocess --num-processes 4
@@ -885,16 +1072,23 @@ def main():
         """
     )
     parser.add_argument('--mode', 
-                       choices=['daily', 'batch', 'single', 'interactive', 'all'], 
+                       choices=['daily', 'batch', 'single', 'hashtag', 'interactive', 'all'], 
                        default='interactive', 
                        help='執行模式:\n'
                             '  daily - 每日收集模式（從 accounts.txt 讀取）\n'
                             '  batch - 批次模式（從資料庫讀取）\n'
                             '  single - 單一使用者\n'
+                            '  hashtag - Hashtag 收集\n'
                             '  interactive - 互動式\n'
                             '  all - 所有平台（從資料庫讀取）')
     parser.add_argument('--platform', type=str, help='平台名稱')
     parser.add_argument('--username', type=str, help='使用者名稱')
+    parser.add_argument('--hashtag', type=str, help='Hashtag（可含或不含 # 符號）。支援單個或多個（用逗號分隔），例如: "timelessbruno" 或 "timelessbruno,travel,food"')
+    parser.add_argument('--results-type', type=str, default='posts', 
+                       choices=['posts', 'reels'],
+                       help='Hashtag 收集的結果類型（預設: posts）')
+    parser.add_argument('--results-limit', type=int, default=50,
+                       help='Hashtag 收集的結果數量限制（預設: 50）')
     parser.add_argument('--post-limit', type=int, help='貼文數量限制')
     parser.add_argument('--story-limit', type=int, help='限時動態數量限制')
     parser.add_argument('--accounts-file', type=str, default='accounts.txt',
@@ -949,6 +1143,23 @@ def main():
                 username=args.username,
                 post_limit=args.post_limit,
                 story_limit=args.story_limit
+            )
+        finally:
+            crawler.close()
+    
+    elif args.mode == 'hashtag':
+        # Hashtag 收集模式
+        if not args.platform or not args.hashtag:
+            logger.error("Hashtag 收集模式需要指定 --platform 和 --hashtag")
+            return
+        
+        crawler = SocialMediaCrawler()
+        try:
+            crawler.collect_hashtag(
+                platform=args.platform,
+                hashtag=args.hashtag,
+                results_type=args.results_type,
+                results_limit=args.results_limit
             )
         finally:
             crawler.close()

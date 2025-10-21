@@ -344,6 +344,98 @@ class DatabaseManager:
         return df
     
     # =========================================================================
+    # Hashtag 貼文管理
+    # =========================================================================
+    
+    def save_hashtag_posts(self, posts: List, hashtag: str):
+        """
+        儲存 hashtag 貼文列表
+        
+        參數:
+            posts: HashtagPost 物件列表
+            hashtag: 收集的 hashtag（不含 # 符號）
+        """
+        if not posts:
+            logger.info("沒有 hashtag 貼文需要儲存")
+            return
+        
+        # 轉換為 DataFrame
+        posts_data = []
+        for post in posts:
+            post_dict = post.to_dict()
+            post_dict['hashtag'] = hashtag.lstrip('#')  # 移除 # 符號
+            post_dict['create_time'] = datetime.datetime.now()
+            post_dict['updated_at'] = datetime.datetime.now()
+            
+            # 套用欄位轉換器
+            post_dict = apply_field_transformers(post_dict)
+            
+            posts_data.append(post_dict)
+        
+        df = pd.DataFrame(posts_data)
+        
+        # ========== 去重處理 ==========
+        # 根據唯一鍵 (platform, hashtag, post_id) 去除重複資料
+        # 保留最後一筆（最新的）
+        original_count = len(df)
+        df = df.drop_duplicates(
+            subset=['platform', 'hashtag', 'post_id'], 
+            keep='last'
+        )
+        deduplicated_count = len(df)
+        
+        if original_count > deduplicated_count:
+            logger.info(
+                f"去除了 {original_count - deduplicated_count} 筆重複的 hashtag 貼文 "
+                f"(原始: {original_count}, 去重後: {deduplicated_count})"
+            )
+        # ==============================
+        
+        if len(df) == 0:
+            logger.info("去重後沒有需要儲存的 hashtag 貼文")
+            return
+        
+        # 使用 update_table 方法儲存
+        self._update_table(
+            df=df,
+            table_name='social_hashtag_posts',
+            diff_table_name='social_hashtag_posts_diff',
+            primary_keys=['platform', 'hashtag', 'post_id']
+        )
+        
+        logger.info(f"已儲存 {len(df)} 筆 hashtag 貼文 (#{hashtag})")
+    
+    def save_hashtag_collection_result(self, result) -> bool:
+        """
+        儲存完整的 hashtag 收集結果
+        
+        參數:
+            result: HashtagCollectionResult 物件
+        
+        返回:
+            是否成功儲存
+        """
+        if not result.success:
+            logger.warning(f"Hashtag 收集失敗，不儲存資料: {result.error_message}")
+            return False
+        
+        try:
+            # 儲存 hashtag 貼文
+            if result.posts:
+                self.save_hashtag_posts(result.posts, result.hashtag)
+            else:
+                logger.warning(f"沒有 hashtag 貼文資料 (#{result.hashtag})")
+            
+            logger.info(f"成功儲存 {result.platform.value} 平台的 hashtag 收集結果 (#{result.hashtag})")
+            return True
+        
+        except Exception as e:
+            logger.error(f"儲存 hashtag 收集結果失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    # =========================================================================
     # 收集歷史記錄管理
     # =========================================================================
     

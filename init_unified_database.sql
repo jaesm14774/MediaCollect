@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS social_posts (
     create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '爬蟲收集此資料的時間',
     created_at DATETIME COMMENT '貼文發布時間',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新時間',
+    expires_at DATETIME COMMENT '過期時間（限時動態）',
     
     -- 連結
     post_url TEXT COMMENT '貼文連結',
@@ -238,6 +239,91 @@ CREATE TABLE IF NOT EXISTS collection_history (
     INDEX idx_success (success),
     INDEX idx_started (started_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='收集歷史記錄表';
+
+-- ============================================================================
+-- 8. Hashtag 貼文資料表 (social_hashtag_posts)
+-- 儲存透過 hashtag 收集的貼文資料
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS social_hashtag_posts (
+    id INT AUTO_INCREMENT PRIMARY KEY COMMENT '自增主鍵',
+    platform VARCHAR(20) NOT NULL COMMENT '平台類型',
+    hashtag VARCHAR(200) NOT NULL COMMENT '收集的 hashtag（不含 # 符號）',
+    post_id VARCHAR(100) NOT NULL COMMENT '貼文 ID',
+    content_type VARCHAR(20) COMMENT '內容類型 (post, tweet, reel, thread)',
+    
+    -- 作者資訊
+    author_id VARCHAR(100) COMMENT '作者 ID',
+    author_username VARCHAR(100) COMMENT '作者名稱',
+    author_display_name VARCHAR(200) COMMENT '作者顯示名稱',
+    
+    -- 內容資訊
+    text TEXT COMMENT '文字內容',
+    title TEXT COMMENT '標題',
+    language VARCHAR(10) COMMENT '語言',
+    
+    -- 媒體資訊
+    media_count INT DEFAULT 0 COMMENT '媒體數量',
+    primary_media_type VARCHAR(20) COMMENT '主要媒體類型 (image, video)',
+    primary_media_url TEXT COMMENT '主要媒體 URL',
+    sub_image_url TEXT COMMENT '子圖片 URL 列表 (用逗號分隔)',
+    sub_video_url TEXT COMMENT '子影片 URL 列表 (用逗號分隔)',
+    sub_thumbnail_url TEXT COMMENT '子縮圖 URL 列表 (用逗號分隔)',
+    
+    -- 互動數據
+    like_count INT DEFAULT 0 COMMENT '按讚數',
+    comment_count INT DEFAULT 0 COMMENT '留言數',
+    share_count INT DEFAULT 0 COMMENT '分享數',
+    view_count INT DEFAULT 0 COMMENT '觀看數',
+    bookmark_count INT DEFAULT 0 COMMENT '收藏數',
+    
+    -- 貼文屬性
+    is_pinned BOOLEAN DEFAULT FALSE COMMENT '是否置頂',
+    is_promoted BOOLEAN DEFAULT FALSE COMMENT '是否為廣告',
+    comments_disabled BOOLEAN DEFAULT FALSE COMMENT '是否禁止留言',
+    
+    -- 位置資訊
+    location_name VARCHAR(200) COMMENT '地點名稱',
+    location_id VARCHAR(100) COMMENT '地點 ID',
+    latitude DECIMAL(10, 8) COMMENT '緯度',
+    longitude DECIMAL(11, 8) COMMENT '經度',
+    
+    -- 標籤與提及
+    hashtags TEXT COMMENT '標籤列表 (用逗號分隔)',
+    mentions TEXT COMMENT '提及的使用者列表 (用逗號分隔)',
+    
+    -- 時間資訊
+    create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '爬蟲收集此資料的時間',
+    created_at DATETIME COMMENT '貼文發布時間',
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新時間',
+    expires_at DATETIME COMMENT '過期時間（限時動態）',
+    
+    -- 連結
+    post_url TEXT COMMENT '貼文連結',
+    
+    -- 原始資料
+    raw_data LONGTEXT COMMENT '完整原始 JSON 資料（字串格式），保留所有從 Apify Actor 取得的資料',
+    
+    -- 索引
+    UNIQUE KEY unique_hashtag_post (platform, hashtag, post_id),
+    INDEX idx_platform (platform),
+    INDEX idx_hashtag (hashtag),
+    INDEX idx_author (author_id),
+    INDEX idx_content_type (content_type),
+    INDEX idx_create_time (create_time),
+    INDEX idx_created (created_at),
+    INDEX idx_like_count (like_count),
+    INDEX idx_view_count (view_count)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Hashtag 貼文資料表';
+
+-- ============================================================================
+-- 9. Hashtag 貼文差異暫存表 (social_hashtag_posts_diff)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS social_hashtag_posts_diff (
+    platform VARCHAR(20),
+    hashtag VARCHAR(200),
+    post_id VARCHAR(100),
+    INDEX idx_hashtag_post (platform, hashtag, post_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Hashtag 貼文差異暫存表';
 
 -- ============================================================================
 -- 初始化完成

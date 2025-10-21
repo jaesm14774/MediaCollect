@@ -231,6 +231,21 @@ class SocialPost:
 
 
 @dataclass
+class HashtagPost(SocialPost):
+    """
+    Hashtag 貼文資料模型
+    繼承自 SocialPost，額外儲存 hashtag 資訊
+    """
+    hashtag: str = ""  # 收集的 hashtag（不含 # 符號）
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """轉換為字典格式"""
+        result = super().to_dict()
+        result['hashtag'] = self.hashtag
+        return result
+
+
+@dataclass
 class CollectionResult:
     """收集結果"""
     platform: PlatformType
@@ -257,4 +272,31 @@ class CollectionResult:
             )
         else:
             return f"收集失敗 [{self.platform.value}]: {self.error_message}"
+
+
+@dataclass
+class HashtagCollectionResult:
+    """Hashtag 收集結果"""
+    platform: PlatformType
+    hashtag: str  # 收集的 hashtag（不含 # 符號）
+    success: bool
+    posts: List[HashtagPost] = field(default_factory=list)
+    error_message: Optional[str] = None
+    collected_at: datetime = field(default_factory=datetime.now)
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    
+    def __str__(self) -> str:
+        if self.success:
+            duration_str = f"{self.duration_seconds}秒" if self.duration_seconds else "N/A"
+            return (
+                f"Hashtag 收集成功 [{self.platform.value}]\n"
+                f"  Hashtag: #{self.hashtag}\n"
+                f"  貼文數: {len(self.posts)}\n"
+                f"  執行時長: {duration_str}\n"
+                f"  收集時間: {self.collected_at.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+        else:
+            return f"Hashtag 收集失敗 [{self.platform.value}] #{self.hashtag}: {self.error_message}"
 

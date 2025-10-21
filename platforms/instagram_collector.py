@@ -8,8 +8,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.base_collector import ApifyBasedCollector
 from core.data_models import (
-    PlatformType, PlatformUser, SocialPost, 
-    MediaItem, MediaType, ContentType
+    PlatformType, PlatformUser, SocialPost, HashtagPost,
+    MediaItem, MediaType, ContentType, HashtagCollectionResult
 )
 from lib.media_downloader import MediaDownloader
 from typing import List, Optional, Dict, Any
@@ -412,4 +412,343 @@ class InstagramCollector(ApifyBasedCollector):
         import re
         hashtags = re.findall(r'#(\w+)', text)
         return hashtags
+
+
+class InstagramHashtagCollector(InstagramCollector):
+    """
+    Instagram Hashtag 收集器
+    
+    專門用於收集特定 hashtag 的貼文，適合追蹤主題或話題。
+    與 InstagramCollector 不同：
+    - InstagramCollector: 追蹤特定使用者的貼文
+    - InstagramHashtagCollector: 追蹤特定主題標籤的貼文
+    """
+    
+    # Apify Actor ID for hashtag scraping
+    HASHTAG_SCRAPER = "apify/instagram-hashtag-scraper"
+    
+    def __init__(self, hashtag, api_token: str, results_type: str = "posts", results_limit: int = 50):
+        """
+        初始化 Instagram Hashtag 收集器
+        
+        參數:
+            hashtag: Instagram hashtag 或 hashtag 列表（可含或不含 # 符號）
+                    - 單個 hashtag: str，例如 "timelessbruno"
+                    - 多個 hashtag: List[str]，例如 ["timelessbruno", "travel", "food"]
+            api_token: Apify API Token
+            results_type: 結果類型 ("posts" 或 "reels")
+            results_limit: 每個 hashtag 的結果數量限制
+        """
+        # 處理 hashtag 參數，統一轉為列表
+        if isinstance(hashtag, str):
+            # 檢查是否為逗號分隔的字串
+            if ',' in hashtag:
+                self.hashtags = [h.strip().lstrip('#') for h in hashtag.split(',') if h.strip()]
+            else:
+                self.hashtags = [hashtag.lstrip('#')]
+        elif isinstance(hashtag, list):
+            self.hashtags = [h.lstrip('#') if isinstance(h, str) else str(h).lstrip('#') for h in hashtag]
+        else:
+            self.hashtags = [str(hashtag).lstrip('#')]
+        
+        # 使用第一個 hashtag 作為 username（為了相容基類）
+        super().__init__(username=self.hashtags[0], api_token=api_token)
+        
+        # 保留舊的 self.hashtag 屬性以向下相容（單數形式）
+        self.hashtag = self.hashtags[0] if self.hashtags else ''
+        self.results_type = results_type
+        self.results_limit = results_limit
+    
+    # =========================================================================
+    # Hashtag 收集核心功能
+    # =========================================================================
+    
+    def collect_hashtag(
+        self,
+        hashtag=None,
+        results_type: Optional[str] = None,
+        results_limit: Optional[int] = None
+    ) -> HashtagCollectionResult:
+        """
+        收集指定 hashtag 的貼文
+        
+        參數:
+            hashtag: Instagram hashtag 或 hashtag 列表（可含或不含 # 符號），預設使用初始化時的 hashtag
+                    - 單個 hashtag: str
+                    - 多個 hashtag: List[str] 或逗號分隔字串
+            results_type: 結果類型 ("posts" 或 "reels")，預設使用初始化時的設定
+            results_limit: 每個 hashtag 的結果數量限制，預設使用初始化時的設定
+        
+        返回:
+            HashtagCollectionResult 物件
+        """
+        # 處理 hashtag 參數
+        if hashtag is None:
+            clean_hashtags = self.hashtags
+        elif isinstance(hashtag, str):
+            if ',' in hashtag:
+                clean_hashtags = [h.strip().lstrip('#') for h in hashtag.split(',') if h.strip()]
+            else:
+                clean_hashtags = [hashtag.lstrip('#')]
+        elif isinstance(hashtag, list):
+            clean_hashtags = [h.lstrip('#') if isinstance(h, str) else str(h).lstrip('#') for h in hashtag]
+        else:
+            clean_hashtags = [str(hashtag).lstrip('#')]
+        
+        r_type = results_type or self.results_type
+        r_limit = results_limit or self.results_limit
+        
+        started_at = datetime.datetime.now()
+        
+        try:
+            print(f"\n{'='*60}")
+            if len(clean_hashtags) == 1:
+                print(f"開始收集 Instagram Hashtag: #{clean_hashtags[0]}")
+            else:
+                print(f"開始收集 Instagram Hashtags: {', '.join(['#' + h for h in clean_hashtags])}")
+            print(f"{'='*60}")
+            
+            # 抓取貼文
+            print(f"\n[步驟 1/1] 抓取 hashtag 貼文...")
+            posts = self._fetch_hashtag_posts(clean_hashtags, r_type, r_limit)
+            
+            # 計算執行時長
+            finished_at = datetime.datetime.now()
+            duration_seconds = int((finished_at - started_at).total_seconds())
+            
+            # 返回結果（hashtag 欄位使用第一個或逗號連接的形式）
+            hashtag_display = ','.join(clean_hashtags)
+            result = HashtagCollectionResult(
+                platform=self.platform,
+                hashtag=hashtag_display,
+                success=True,
+                posts=posts,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration_seconds
+            )
+            
+            print(f"\n{'='*60}")
+            print(f"✓ Hashtag 收集完成！")
+            if len(clean_hashtags) == 1:
+                print(f"  - Hashtag: #{clean_hashtags[0]}")
+            else:
+                print(f"  - Hashtags: {', '.join(['#' + h for h in clean_hashtags])}")
+            print(f"  - 貼文數: {len(posts)}")
+            print(f"  - 執行時長: {duration_seconds} 秒")
+            print(f"{'='*60}\n")
+            
+            return result
+        
+        except Exception as e:
+            finished_at = datetime.datetime.now()
+            duration_seconds = int((finished_at - started_at).total_seconds())
+            
+            error_msg = str(e)
+            print(f"\n✗ Hashtag 收集失敗: {error_msg}")
+            
+            hashtag_display = ','.join(clean_hashtags) if clean_hashtags else ''
+            return HashtagCollectionResult(
+                platform=self.platform,
+                hashtag=hashtag_display,
+                success=False,
+                error_message=error_msg,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration_seconds
+            )
+    
+    def _fetch_hashtag_posts(
+        self,
+        hashtags,
+        results_type: str = "posts",
+        results_limit: int = 50
+    ) -> List[HashtagPost]:
+        """
+        抓取 hashtag 貼文（內部方法）
+        
+        參數:
+            hashtags: 單個 hashtag (str) 或 hashtag 列表 (List[str])
+            results_type: 結果類型 ("posts" 或 "reels")
+            results_limit: 結果數量限制
+        """
+        try:
+            # 統一處理為列表
+            if isinstance(hashtags, str):
+                hashtag_list = [hashtags]
+            elif isinstance(hashtags, list):
+                hashtag_list = hashtags
+            else:
+                hashtag_list = [str(hashtags)]
+            
+            run_input = {
+                "hashtags": hashtag_list,
+                "resultsType": results_type,
+                "resultsLimit": results_limit
+            }
+            
+            items = self.call_apify_actor(self.HASHTAG_SCRAPER, run_input)
+            
+            if not items:
+                print(f"  [Instagram Hashtag] ℹ 未取得貼文資料（可能原因：無相關貼文、網路錯誤）")
+                return []
+            
+            # 解析貼文
+            posts = []
+            for item in items:
+                # 嘗試從 item 中取得該貼文對應的 hashtag
+                # Apify 可能會在 item 中包含 hashtag 資訊
+                item_hashtag = item.get('hashtag') or item.get('queryHashtag') or hashtag_list[0]
+                post = self._parse_hashtag_post(item, item_hashtag)
+                if post:
+                    posts.append(post)
+            
+            if len(posts) == 0 and len(items) > 0:
+                print(f"  [Instagram Hashtag] ⚠ 取得了 {len(items)} 筆原始資料，但解析後無有效貼文")
+            
+            return posts
+        
+        except Exception as e:
+            print(f"[Instagram Hashtag] ✗ 抓取 hashtag 貼文失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
+    def _parse_hashtag_post(self, raw: Dict[str, Any], hashtag: str) -> Optional[HashtagPost]:
+        """解析 hashtag 貼文資料"""
+        try:
+            # 基本資訊
+            post_id = raw.get('shortCode') or raw.get('id', '')
+            if not post_id:
+                return None
+            
+            # 將原始資料轉為 JSON 字串
+            raw_data_json = json.dumps(raw, ensure_ascii=False)
+            
+            # 作者資訊（hashtag 收集的資料結構稍有不同）
+            author_username = raw.get('ownerUsername', '')
+            author_id = raw.get('ownerId', '')
+            author_display_name = raw.get('ownerFullName', '')
+            
+            # 判斷內容類型
+            product_type = raw.get('productType', '').lower()
+            post_type = raw.get('type', '').lower()
+            
+            if 'reel' in product_type or 'clips' in product_type or 'video' in post_type:
+                content_type = ContentType.REEL
+            else:
+                content_type = ContentType.POST
+            
+            # 時間資訊
+            timestamp = raw.get('timestamp')
+            if timestamp:
+                if isinstance(timestamp, str):
+                    # 處理 ISO 8601 格式
+                    timestamp = timestamp.replace('Z', '+00:00')
+                    created_at = datetime.datetime.fromisoformat(timestamp)
+                else:
+                    created_at = datetime.datetime.fromtimestamp(timestamp)
+            else:
+                created_at = None
+            
+            # 建立 hashtag 貼文物件
+            post = HashtagPost(
+                platform=PlatformType.INSTAGRAM,
+                post_id=post_id,
+                content_type=content_type,
+                author_id=author_id,
+                author_username=author_username,
+                author_display_name=author_display_name,
+                text=raw.get('caption', ''),
+                like_count=raw.get('likesCount', 0),
+                comment_count=raw.get('commentsCount', 0),
+                view_count=raw.get('videoPlayCount') or raw.get('igPlayCount') or raw.get('playCount', 0),
+                share_count=raw.get('reshareCount', 0),
+                comments_disabled=raw.get('commentsDisabled', False),
+                is_promoted=raw.get('isSponsored', False),
+                location_name=raw.get('locationName'),
+                created_at=created_at,
+                post_url=raw.get('url', f"https://www.instagram.com/p/{post_id}/"),
+                raw_data=raw_data_json,
+                hashtag=hashtag
+            )
+            
+            # 解析媒體（重用父類別的 _parse_media 方法）
+            post.media_items = self._parse_media(raw)
+            
+            # 解析標籤（從 raw 的 hashtags 或從 caption 提取）
+            if 'hashtags' in raw and isinstance(raw['hashtags'], list):
+                post.hashtags = raw['hashtags']
+            else:
+                post.hashtags = self._extract_hashtags(post.text)
+            
+            # 解析提及
+            if 'mentions' in raw and isinstance(raw['mentions'], list):
+                post.mentions = raw['mentions']
+            
+            return post
+        
+        except Exception as e:
+            print(f"[Instagram Hashtag] 解析貼文失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    # =========================================================================
+    # 實作基類的抽象方法（這些方法在 hashtag 收集中不使用）
+    # =========================================================================
+    
+    def fetch_user_profile(self):
+        """不使用於 hashtag 收集"""
+        return None
+    
+    def fetch_posts(self, limit: int = 50):
+        """不使用於 hashtag 收集"""
+        return []
+    
+    def fetch_stories(self, limit: Optional[int] = None):
+        """不使用於 hashtag 收集"""
+        return []
+    
+    def download_media(self, post, save_dir: str) -> bool:
+        """
+        下載 hashtag 貼文中的媒體檔案
+        
+        參數:
+            post: HashtagPost 物件
+            save_dir: 基礎儲存目錄
+        
+        返回:
+            是否成功下載
+        """
+        try:
+            # 建立 hashtag 目錄（使用第一個關鍵詞）
+            hashtag_dir = os.path.join(save_dir, f"hashtag_{self.hashtags[0]}")
+            os.makedirs(hashtag_dir, exist_ok=True)
+            
+            # 下載所有媒體
+            success_count = 0
+            for index, media in enumerate(post.media_items):
+                # 決定副檔名
+                if media.media_type == MediaType.VIDEO:
+                    ext = 'mp4'
+                else:
+                    ext = 'jpg'
+                
+                # 建立檔名（使用 post_id 和 index）
+                filename = f"{post.post_id}_{index}.{ext}"
+                file_path = os.path.join(hashtag_dir, filename)
+                
+                # 下載
+                if self.downloader.download(media.url, file_path):
+                    media.local_path = file_path
+                    success_count += 1
+            
+            return success_count > 0
+        
+        except Exception as e:
+            print(f"[Instagram Hashtag] 下載媒體失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
