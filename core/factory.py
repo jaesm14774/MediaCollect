@@ -222,10 +222,11 @@ def register_all_collectors():
     except ImportError as e:
         print(f"[Factory] 無法載入 Facebook 收集器: {e}")
     
-    # Twitter
+    # Twitter (包含使用者收集、Hashtag 收集和進階搜尋)
     try:
-        from platforms.twitter_collector import TwitterCollector
+        from platforms.twitter_collector import TwitterCollector, TwitterHashtagCollector
         CollectorFactory.register_collector(PlatformType.TWITTER, TwitterCollector)
+        CollectorFactory.register_hashtag_collector(PlatformType.TWITTER, TwitterHashtagCollector)
     except ImportError as e:
         print(f"[Factory] 無法載入 Twitter 收集器: {e}")
     

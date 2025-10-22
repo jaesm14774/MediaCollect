@@ -297,24 +297,47 @@ class DatabaseManager:
     
     def get_active_users(self, platform: Optional[str] = None) -> pd.DataFrame:
         """
-        取得所有啟用的使用者列表
+        取得所有啟用的使用者列表（只返回唯一的使用者，避免重複）
         
         參數:
             platform: 平台名稱（None 表示所有平台）
         
         返回:
-            使用者資料 DataFrame
+            使用者資料 DataFrame（每個使用者只會出現一次）
         """
         if platform:
+            # 使用子查詢取得每個使用者的最新記錄，避免重複
             query = """
-                SELECT * FROM social_users 
-                WHERE status = 1 AND platform = %s
+                SELECT t1.* 
+                FROM social_users t1
+                INNER JOIN (
+                    SELECT username, platform, MAX(id) as max_id
+                    FROM social_users
+                    WHERE status = 1 AND platform = %s
+                    GROUP BY username, platform
+                ) t2 ON t1.username = t2.username 
+                    AND t1.platform = t2.platform 
+                    AND t1.id = t2.max_id
+                WHERE t1.status = 1
             """
             df = pd.read_sql_query(query, self.engine, params=(platform,))
         else:
-            query = "SELECT * FROM social_users WHERE status = 1"
+            query = """
+                SELECT t1.* 
+                FROM social_users t1
+                INNER JOIN (
+                    SELECT username, platform, MAX(id) as max_id
+                    FROM social_users
+                    WHERE status = 1
+                    GROUP BY username, platform
+                ) t2 ON t1.username = t2.username 
+                    AND t1.platform = t2.platform 
+                    AND t1.id = t2.max_id
+                WHERE t1.status = 1
+            """
             df = pd.read_sql_query(query, self.engine)
         
+        logger.info(f"從資料庫讀取到 {len(df)} 個唯一的啟用使用者")
         return df
     
     def get_user_posts(

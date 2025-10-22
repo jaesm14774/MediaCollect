@@ -66,10 +66,14 @@ PLATFORM_SETTINGS = {
         'caption_text': False,     # 是否提取影片字幕
     },
     'twitter': {
-        'enabled': False,
+        'enabled': True,
         'post_limit': 20,         # Twitter 推文較短，可多抓一些
         'story_limit': None,
         'download_media': True,
+        # Hashtag 搜尋設定
+        'hashtag_limit': 1000,      # Hashtag 搜尋的推文數量
+        # 進階搜尋設定
+        'search_sort': 'Latest',  # 搜尋排序: "Latest" 或 "Top"
     },
     'threads': {
         'enabled': False,
@@ -111,8 +115,10 @@ APIFY_ACTORS = {
         'story': None  # Facebook 限時動態需要登入
     },
     'twitter': {
-        'profile': 'apify/twitter-scraper',
-        'post': 'apify/twitter-scraper',
+        'profile': 'deepanshusharm/twitter-profile-scraper-no-cookies',
+        'post': 'xtdata/twitter-x-scraper',
+        'hashtag': 'xtdata/twitter-x-scraper',
+        'search': 'xtdata/twitter-x-scraper',
         'story': None  # Twitter 沒有限時動態
     },
     'threads': {
