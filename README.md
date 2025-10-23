@@ -357,6 +357,10 @@ python main.py --mode interactive
 # 單一使用者
 python main.py --mode single --platform instagram --username nasa --post-limit 10
 
+# 單一使用者（加上時間篩選參數，適用於 Facebook）
+python main.py --mode single --platform facebook --username nasa --posts-newer-than "2024-01-01" --posts-older-than "2024-12-31"
+python main.py --mode single --platform facebook --username nasa --posts-newer-than "1 month" --caption-text
+
 # 批次處理（從資料庫讀取）
 python main.py --mode batch --platform twitter
 

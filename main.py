@@ -198,6 +198,19 @@ class SocialMediaCrawler:
             if result.success:
                 self.db.save_hashtag_collection_result(result)
             
+            # 儲存收集歷史記錄
+            self.db.save_collection_history(
+                platform=platform,
+                username=f"hashtag_{result.hashtag}",  # 使用 hashtag 作為 username
+                success=result.success,
+                post_count=len(result.posts),
+                story_count=0,  # hashtag 收集沒有限時動態
+                error_message=result.error_message,
+                started_at=result.started_at,
+                finished_at=result.finished_at,
+                duration_seconds=result.duration_seconds
+            )
+            
             logger.info(f"\n{result}")
             return result
         
@@ -210,10 +223,37 @@ class SocialMediaCrawler:
             if self.discord_token:
                 notify(self.discord_token, f"[{platform.upper()}] Hashtag 收集失敗 - #{hashtag}:\n{str(e)}")
             
+            # 處理 hashtag 字串以保存歷史記錄
+            if isinstance(hashtag, str):
+                if ',' in hashtag:
+                    hashtag_str = ','.join([h.strip().lstrip('#') for h in hashtag.split(',') if h.strip()])
+                else:
+                    hashtag_str = hashtag.lstrip('#')
+            elif isinstance(hashtag, list):
+                hashtag_str = ','.join([str(h).lstrip('#') for h in hashtag])
+            else:
+                hashtag_str = str(hashtag).lstrip('#')
+            
+            # 儲存失敗的收集歷史記錄
+            try:
+                self.db.save_collection_history(
+                    platform=platform,
+                    username=f"hashtag_{hashtag_str}",
+                    success=False,
+                    post_count=0,
+                    story_count=0,
+                    error_message=error_msg,
+                    started_at=None,
+                    finished_at=None,
+                    duration_seconds=None
+                )
+            except:
+                logger.error("無法儲存收集歷史記錄")
+            
             from core.data_models import PlatformType, HashtagCollectionResult
             return HashtagCollectionResult(
                 platform=PlatformType(platform.lower()),
-                hashtag=hashtag.lstrip('#'),
+                hashtag=hashtag_str,
                 success=False,
                 error_message=error_msg
             )
@@ -1058,6 +1098,10 @@ def main():
   # 單一使用者收集
   python main.py --mode single --platform instagram --username nasa
   
+  # 單一使用者收集（加上時間篩選）
+  python main.py --mode single --platform facebook --username nasa --posts-newer-than "2024-01-01" --posts-older-than "2024-12-31"
+  python main.py --mode single --platform facebook --username nasa --posts-newer-than "1 month"
+  
   # Hashtag 收集（單個）
   python main.py --mode hashtag --platform instagram --hashtag timelessbruno
   
@@ -1091,6 +1135,10 @@ def main():
                        help='Hashtag 收集的結果數量限制（預設: 50）')
     parser.add_argument('--post-limit', type=int, help='貼文數量限制')
     parser.add_argument('--story-limit', type=int, help='限時動態數量限制')
+    parser.add_argument('--photo-limit', type=int, help='照片數量限制（僅適用於 Facebook）')
+    parser.add_argument('--posts-newer-than', type=str, help='只抓取此日期之後的貼文 (格式: YYYY-MM-DD 或 "1 day", "2 months")')
+    parser.add_argument('--posts-older-than', type=str, help='只抓取此日期之前的貼文 (格式: YYYY-MM-DD 或 "1 day", "2 months")')
+    parser.add_argument('--caption-text', action='store_true', help='是否提取影片字幕（僅適用於 Facebook）')
     parser.add_argument('--accounts-file', type=str, default='accounts.txt',
                        help='帳號配置檔路徑（預設: accounts.txt）')
     parser.add_argument('--async', dest='use_async', action='store_true',
@@ -1142,7 +1190,11 @@ def main():
                 platform=args.platform,
                 username=args.username,
                 post_limit=args.post_limit,
-                story_limit=args.story_limit
+                story_limit=args.story_limit,
+                photo_limit=args.photo_limit,
+                posts_newer_than=args.posts_newer_than,
+                posts_older_than=args.posts_older_than,
+                caption_text=args.caption_text
             )
         finally:
             crawler.close()

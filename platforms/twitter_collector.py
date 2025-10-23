@@ -86,21 +86,29 @@ class TwitterCollector(ApifyBasedCollector):
             # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
+            # 解析 website 物件
+            website_url = None
+            if raw.get('website'):
+                if isinstance(raw['website'], dict):
+                    website_url = raw['website'].get('expanded_url') or raw['website'].get('display_url')
+                else:
+                    website_url = raw.get('website')
+            
             user = PlatformUser(
                 platform=PlatformType.TWITTER,
-                user_id=raw.get('userId', ''),
+                user_id=raw.get('user_id') or raw.get('username', self.username),  # 如果沒有 user_id，使用 username
                 username=raw.get('username', self.username),
-                display_name=raw.get('displayName', ''),
-                is_verified=raw.get('isVerified', False) or raw.get('isBlueVerified', False),
+                display_name=raw.get('display_name', ''),
+                is_verified=raw.get('verified', False),
                 description=raw.get('bio', ''),
-                profile_image_url=raw.get('profilePictureUrl'),
-                banner_image_url=raw.get('bannerUrl'),
-                follower_count=raw.get('followersCount', 0),
-                following_count=raw.get('followingCount', 0),
-                post_count=raw.get('tweetsCount', 0),
-                external_url=raw.get('website'),
+                profile_image_url=raw.get('profile_image_url'),
+                banner_image_url=raw.get('banner_image_url'),
+                follower_count=raw.get('followers_count', 0),
+                following_count=raw.get('following_count', 0),
+                post_count=raw.get('posts_count', 0) or raw.get('tweet_count', 0),
+                external_url=website_url,
                 location=raw.get('location'),
-                created_at=self._parse_twitter_date(raw.get('joinedDate')),
+                created_at=self._parse_twitter_date(raw.get('joined_date')),
                 raw_data=raw_data_json
             )
             
@@ -113,22 +121,43 @@ class TwitterCollector(ApifyBasedCollector):
             traceback.print_exc()
             return None
     
-    def fetch_posts(self, limit: int = 50, **kwargs) -> List[SocialPost]:
+    def fetch_posts(self, limit: int = 50, only_posts_newer_than: Optional[str] = None, only_posts_older_than: Optional[str] = None, **kwargs) -> List[SocialPost]:
         """
         抓取使用者推文
         使用 xtdata/twitter-x-scraper
         
         參數:
             limit: 抓取推文數量限制
+            only_posts_newer_than: 只抓取此日期之後的貼文 (格式: YYYY-MM-DD)
+            only_posts_older_than: 只抓取此日期之前的貼文 (格式: YYYY-MM-DD)
         """
         try:
+            # 建構基本搜尋詞
+            search_term = f"from:{self.username}"
+            
+            # 加入時間過濾條件
+            if only_posts_newer_than:
+                # 將日期格式轉換為 YYYY-MM-DD（如果是相對時間則需要轉換）
+                date_str = self._parse_date_string(only_posts_newer_than)
+                if date_str:
+                    search_term += f" since:{date_str}"
+                    self.logger.info(f"  - 時間過濾: 只抓取 {date_str} 之後的貼文")
+            
+            if only_posts_older_than:
+                # 將日期格式轉換為 YYYY-MM-DD（如果是相對時間則需要轉換）
+                date_str = self._parse_date_string(only_posts_older_than)
+                if date_str:
+                    search_term += f" until:{date_str}"
+                    self.logger.info(f"  - 時間過濾: 只抓取 {date_str} 之前的貼文")
+            
             run_input = {
-                "searchTerms": [f"from:{self.username}"],
+                "searchTerms": [search_term],
                 "maxItems": limit,
                 "sort": "Latest"  # 最新優先
             }
             
             self.logger.info(f"正在抓取推文 (limit={limit}): @{self.username}")
+            self.logger.debug(f"搜尋條件: {search_term}")
             items = self.call_apify_actor(self.POST_SCRAPER, run_input)
             
             if not items:
@@ -473,6 +502,69 @@ class TwitterCollector(ApifyBasedCollector):
             pass
         
         # 無法解析時回傳 None
+        return None
+    
+    def _parse_date_string(self, date_input: str) -> Optional[str]:
+        """
+        解析日期字串並轉換為 YYYY-MM-DD 格式
+        
+        支援格式:
+        - YYYY-MM-DD (直接返回)
+        - "1 day", "2 weeks", "3 months", "1 year" (相對日期)
+        
+        參數:
+            date_input: 日期字串
+        
+        返回:
+            YYYY-MM-DD 格式的日期字串，若解析失敗則返回 None
+        """
+        if not date_input:
+            return None
+        
+        date_input = date_input.strip()
+        
+        # 檢查是否已經是 YYYY-MM-DD 格式
+        try:
+            parsed = datetime.datetime.strptime(date_input, "%Y-%m-%d")
+            return date_input
+        except:
+            pass
+        
+        # 解析相對日期 (如 "1 day", "2 months")
+        import re
+        relative_pattern = r'^(\d+)\s+(day|days|week|weeks|month|months|year|years)$'
+        match = re.match(relative_pattern, date_input.lower())
+        
+        if match:
+            amount = int(match.group(1))
+            unit = match.group(2)
+            
+            now = datetime.datetime.now()
+            
+            if unit in ['day', 'days']:
+                target_date = now - datetime.timedelta(days=amount)
+            elif unit in ['week', 'weeks']:
+                target_date = now - datetime.timedelta(weeks=amount)
+            elif unit in ['month', 'months']:
+                # 近似計算：1個月 = 30天
+                target_date = now - datetime.timedelta(days=amount * 30)
+            elif unit in ['year', 'years']:
+                # 近似計算：1年 = 365天
+                target_date = now - datetime.timedelta(days=amount * 365)
+            else:
+                return None
+            
+            return target_date.strftime("%Y-%m-%d")
+        
+        # 嘗試其他常見格式
+        for fmt in ["%Y/%m/%d", "%d-%m-%Y", "%d/%m/%Y"]:
+            try:
+                parsed = datetime.datetime.strptime(date_input, fmt)
+                return parsed.strftime("%Y-%m-%d")
+            except:
+                pass
+        
+        self.logger.warning(f"無法解析日期格式: {date_input}")
         return None
 
 

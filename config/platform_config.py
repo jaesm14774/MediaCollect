@@ -28,6 +28,7 @@ if not APIFY_TOKEN_LIST:
 else:
     # 隨機選擇一個 Token（分散負載）
     APIFY_TOKEN = random.choice(APIFY_TOKEN_LIST)
+print(f"使用的 Apify Token: {APIFY_TOKEN}...")
 
 # ============================================================================
 # 檔案路徑設定
