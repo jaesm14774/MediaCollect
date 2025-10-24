@@ -603,46 +603,65 @@ class TwitterHashtagCollector(TwitterCollector):
         """Hashtag 收集器不需要用戶資料"""
         return None
     
-    def fetch_posts(self, limit: int = 50, **kwargs) -> List[SocialPost]:
+    def fetch_posts(
+        self,
+        limit: int = 50,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        sort: str = "Top",
+        **kwargs
+    ) -> List[SocialPost]:
         """
         使用 Hashtag 搜尋推文
-        
+
         參數:
             limit: 抓取推文數量限制
+            start_date: 開始日期 (YYYY-MM-DD)，用於時間過濾
+            end_date: 結束日期 (YYYY-MM-DD)，用於時間過濾
+            sort: 排序方式 ("Latest" 或 "Top")
         """
         try:
-            # 建構搜尋查詢（加上 # 符號）
+            # 建構搜尋查詢
             search_term = f"{self.hashtag}"
-            
+
+            # 添加時間過濾條件
+            if start_date:
+                search_term += f" since:{start_date}"
+                self.logger.info(f"  - 時間過濾: 從 {start_date} 開始")
+
+            if end_date:
+                search_term += f" until:{end_date}"
+                self.logger.info(f"  - 時間過濾: 到 {end_date} 結束")
+
             run_input = {
                 "searchTerms": [search_term],
                 "maxItems": limit,
-                "sort": "Top",
+                "sort": sort,
                 "onlyImage": False,
                 "onlyQuote": False,
                 "onlyTwitterBlue": False,
                 "onlyVerifiedUsers": False,
                 "onlyVideo": False
             }
-            
+
             self.logger.info(f"正在搜尋 Hashtag 推文 (limit={limit}): {search_term}")
             self.logger.debug(f"搜尋參數: {run_input}")
             items = self.call_apify_actor(self.POST_SCRAPER, run_input)
-            
+
             if not items:
                 self.logger.warning(f"未取得任何推文: {search_term}")
                 return []
-            
+
             # 重用父類的 _parse_post 方法解析推文
             posts = []
             for item in items:
                 post = self._parse_post(item)
                 if post:
                     posts.append(post)
-            
+
             self.logger.info(f"成功抓取 {len(posts)} 則 Hashtag 推文")
             return posts
-        
+
         except Exception as e:
             self.logger.error(f"搜尋 Hashtag 推文失敗: {e}")
             import traceback
@@ -700,29 +719,40 @@ class TwitterHashtagCollector(TwitterCollector):
             return False
     
     def collect_hashtag(
-        self, 
-        limit: Optional[int] = None
+        self,
+        limit: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        sort: str = "Top"
     ) -> HashtagCollectionResult:
         """
         執行 Hashtag 收集
-        
+
         參數:
             limit: 抓取推文數量限制,若為 None 則使用初始化時的 results_limit
-        
+            start_date: 開始日期 (YYYY-MM-DD)，用於時間過濾
+            end_date: 結束日期 (YYYY-MM-DD)，用於時間過濾
+            sort: 排序方式 ("Latest" 或 "Top")
+
         返回:
             HashtagCollectionResult 物件
         """
         started_at = datetime.datetime.now()
-        
+
         # 若未指定 limit,使用初始化時的 results_limit
         if limit is None:
             limit = self.results_limit
-        
+
         try:
             self.logger.info(f"[Twitter] 開始收集 Hashtag: #{self.hashtag}")
-            
-            # 抓取推文
-            posts = self.fetch_posts(limit=limit)
+
+            # 抓取推文（支援時間過濾）
+            posts = self.fetch_posts(
+                limit=limit,
+                start_date=start_date,
+                end_date=end_date,
+                sort=sort
+            )
             
             # 轉換為 HashtagPost
             hashtag_posts = []

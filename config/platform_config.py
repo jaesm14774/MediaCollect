@@ -51,6 +51,14 @@ PLATFORM_SETTINGS = {
         'post_limit': 5,          # 每個使用者抓取的貼文數
         'story_limit': None,      # 限時動態數量 (None=全部)
         'download_media': True,   # 是否下載媒體
+        # Hashtag 批次時間切分設定
+        'batch_time_split': {
+            'enabled': True,              # 是否啟用時間切分
+            'split_strategy': 'months',   # 切分策略: 'days', 'months', 'years'
+            'interval_size': 2,           # 每個批次的區間大小 (配合 split_strategy)
+            'delay_min': 10,              # 批次間最小延遲秒數
+            'delay_max': 30,              # 批次間最大延遲秒數
+        },
     },
     'facebook': {
         'enabled': False,
@@ -75,6 +83,14 @@ PLATFORM_SETTINGS = {
         'hashtag_limit': 1000,      # Hashtag 搜尋的推文數量
         # 進階搜尋設定
         'search_sort': 'Latest',  # 搜尋排序: "Latest" 或 "Top"
+        # Hashtag 批次時間切分設定
+        'batch_time_split': {
+            'enabled': True,
+            'split_strategy': 'months',
+            'interval_size': 1,
+            'delay_min': 15,
+            'delay_max': 45,
+        },
     },
     'threads': {
         'enabled': False,
