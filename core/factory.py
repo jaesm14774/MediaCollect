@@ -150,9 +150,9 @@ class CollectorFactory:
         參數:
             platform: 平台名稱 (instagram, facebook, twitter 等)
             hashtag: 目標 hashtag（可含或不含 # 符號）
-                    - 單個 hashtag: str，例如 "timelessbruno"
-                    - 多個 hashtag: List[str]，例如 ["timelessbruno", "travel"]
-                    - 逗號分隔字串: str，例如 "timelessbruno,travel,food"
+                    - 單個 hashtag: str，例如 "elonmusk"
+                    - 多個 hashtag: List[str]，例如 ["elonmusk", "travel"]
+                    - 逗號分隔字串: str，例如 "elonmusk,travel,food"
             api_token: API 金鑰
             **kwargs: 其他平台特定參數
         
@@ -232,8 +232,9 @@ def register_all_collectors():
     
     # Threads
     try:
-        from platforms.threads_collector import ThreadsCollector
+        from platforms.threads_collector import ThreadsCollector, ThreadsHashtagCollector
         CollectorFactory.register_collector(PlatformType.THREADS, ThreadsCollector)
+        CollectorFactory.register_hashtag_collector(PlatformType.THREADS, ThreadsHashtagCollector)
     except ImportError as e:
         print(f"[Factory] 無法載入 Threads 收集器: {e}")
     

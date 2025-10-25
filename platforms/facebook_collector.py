@@ -16,6 +16,7 @@ from lib.logger import get_logger
 from typing import List, Optional, Dict, Any
 import datetime
 import json
+from config.platform_config import APIFY_ACTORS
 
 
 class FacebookCollector(ApifyBasedCollector):
@@ -35,9 +36,9 @@ class FacebookCollector(ApifyBasedCollector):
     """
     
     # Apify Actor IDs
-    PAGE_SCRAPER = "apify/facebook-pages-scraper"
-    POST_SCRAPER = "apify/facebook-posts-scraper"
-    PHOTO_SCRAPER = "apify/facebook-photos-scraper"
+    PAGE_SCRAPER = APIFY_ACTORS['facebook']['profile']
+    POST_SCRAPER = APIFY_ACTORS['facebook']['post']
+    PHOTO_SCRAPER = APIFY_ACTORS['facebook']['photo']
     
     def __init__(self, username: str, api_token: str):
         """

@@ -23,6 +23,7 @@ from lib.media_downloader import MediaDownloader
 from lib.logger import get_logger
 from typing import List, Optional, Dict, Any
 import datetime
+from config.platform_config import APIFY_ACTORS
 
 
 class TwitterCollector(ApifyBasedCollector):
@@ -40,8 +41,8 @@ class TwitterCollector(ApifyBasedCollector):
     """
     
     # Apify Actor IDs
-    PROFILE_SCRAPER = "deepanshusharm/twitter-profile-scraper-no-cookies"
-    POST_SCRAPER = "xtdata/twitter-x-scraper"
+    PROFILE_SCRAPER = APIFY_ACTORS['twitter']['profile']
+    POST_SCRAPER = APIFY_ACTORS['twitter']['post']
     
     def __init__(self, username: str, api_token: str):
         """

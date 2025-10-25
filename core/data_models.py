@@ -123,6 +123,7 @@ class MediaItem:
     duration: Optional[float] = None          # 影片長度（秒）
     file_size: Optional[int] = None           # 檔案大小（bytes）
     alt_text: Optional[str] = None            # 替代文字
+    has_audio: Optional[bool] = None          # 是否有音訊（影片用）
     local_path: Optional[str] = None          # 本地儲存路徑
 
 

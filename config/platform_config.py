@@ -92,10 +92,13 @@ PLATFORM_SETTINGS = {
         },
     },
     'threads': {
-        'enabled': False,
-        'post_limit': 15,
+        'enabled': True,
+        'post_limit': 100,
         'story_limit': None,
         'download_media': True,
+        # Hashtag 搜尋設定
+        'hashtag_limit': 100,        # Hashtag 搜尋的貼文數量
+        'sort_by_recent': True,      # 是否依照最新排序 (True) 或依照相關性 (False)
     }
 }
 
@@ -122,7 +125,8 @@ APIFY_ACTORS = {
     'instagram': {
         'profile': 'apify/instagram-profile-scraper',
         'post': 'apify/instagram-post-scraper',
-        'story': 'igview-owner/instagram-story-viewer'
+        'story': 'igview-owner/instagram-story-viewer',
+        'hashtag': 'apify/instagram-hashtag-scraper',
     },
     'facebook': {
         'profile': 'apify/facebook-pages-scraper',
@@ -134,13 +138,13 @@ APIFY_ACTORS = {
         'profile': 'deepanshusharm/twitter-profile-scraper-no-cookies',
         'post': 'xtdata/twitter-x-scraper',
         'hashtag': 'xtdata/twitter-x-scraper',
-        'search': 'xtdata/twitter-x-scraper',
         'story': None  # Twitter 沒有限時動態
     },
     'threads': {
-        'profile': 'apify/threads-scraper',
-        'post': 'apify/threads-scraper',
-        'story': None  # Threads 目前沒有限時動態
+        'profile': 'apify/threads-profile-api-scraper',
+        'post': 'futurizerush/meta-threads-scraper',
+        'story': None,  # Threads 目前沒有限時動態
+        'hashtag': 'watcher.data/search-threads-by-keywords'
     }
 }
 

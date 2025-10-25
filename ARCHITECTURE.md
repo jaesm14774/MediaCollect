@@ -1,130 +1,258 @@
-# 🏗️ 架構設計文檔
+# Architecture Design Documentation
 
-## 概述
+**This document explains how MediaCollect is built and how to extend it.**
 
-本系統採用**策略模式 + 工廠模式 + 抽象基類**的設計，實現了一個高度可擴展的多平台社群媒體資料收集系統。
+MediaCollect uses a **Strategy Pattern + Factory Pattern + Abstract Base Class** design that makes it easy to add new social media platforms.
 
 ---
 
-## 核心設計模式
+## Table of Contents
 
-### 1. 策略模式 (Strategy Pattern)
+- [System Overview](#system-overview)
+- [Design Patterns](#design-patterns)
+- [Data Models](#data-models)
+- [Module Structure](#module-structure)
+- [Database Design](#database-design)
+- [How to Add a New Platform](#how-to-add-a-new-platform)
+- [Error Handling](#error-handling)
+- [Performance Optimization](#performance-optimization)
+- [Testing Strategy](#testing-strategy)
+- [Security Considerations](#security-considerations)
 
-不同平台的收集邏輯封裝在各自的收集器類別中，但都實作相同的介面。
+---
+
+## System Overview
+
+### What Problems Does This Architecture Solve?
+
+**Problem:** Each social media platform has different APIs and data formats.
+
+**Solution:** MediaCollect provides a unified interface that works across all platforms:
 
 ```python
-# 抽象策略
-class BaseSocialMediaCollector(ABC):
-    @abstractmethod
-    def fetch_user_profile(self) -> PlatformUser: pass
-    @abstractmethod
-    def fetch_posts(self, limit: int) -> List[SocialPost]: pass
-    # ...
+# Same code works for any platform
+collector = CollectorFactory.create_collector('instagram', 'nasa', api_token)
+result = collector.collect_all()
 
-# 具體策略
-class InstagramCollector(BaseSocialMediaCollector):
-    def fetch_user_profile(self):
-        # Instagram 特定實作
-        pass
-
-class TwitterCollector(BaseSocialMediaCollector):
-    def fetch_user_profile(self):
-        # Twitter 特定實作
-        pass
+collector = CollectorFactory.create_collector('twitter', 'elonmusk', api_token)
+result = collector.collect_all()  # Same method, different platform
 ```
 
-**優點:**
-- 各平台邏輯互不干擾
-- 易於測試和維護
-- 符合開放封閉原則 (OCP)
+**Key benefits:**
+- **Write once, use everywhere**: Client code doesn't need platform-specific logic
+- **Easy to add platforms**: Implement 4 methods and register
+- **Standardized data**: All platforms use the same data models
+- **Maintainable**: Each platform's code is isolated
 
-### 2. 工廠模式 (Factory Pattern)
+---
 
-透過 `CollectorFactory` 自動建立對應平台的收集器。
+## Design Patterns
+
+### Pattern 1: Strategy Pattern
+
+**Strategy pattern encapsulates platform-specific collection logic.**
+
+Each platform implements the same interface but with different behavior:
+
+```python
+# Abstract strategy (the interface)
+class BaseSocialMediaCollector(ABC):
+    @abstractmethod
+    def fetch_user_profile(self) -> PlatformUser:
+        """Every platform must implement this"""
+        pass
+
+    @abstractmethod
+    def fetch_posts(self, limit: int) -> List[SocialPost]:
+        """Every platform must implement this"""
+        pass
+
+# Concrete strategy for Instagram
+class InstagramCollector(BaseSocialMediaCollector):
+    def fetch_user_profile(self):
+        # Instagram-specific implementation
+        return PlatformUser(...)
+
+    def fetch_posts(self, limit: int):
+        # Instagram-specific implementation
+        return [SocialPost(...), ...]
+
+# Concrete strategy for Twitter
+class TwitterCollector(BaseSocialMediaCollector):
+    def fetch_user_profile(self):
+        # Twitter-specific implementation
+        return PlatformUser(...)
+
+    def fetch_posts(self, limit: int):
+        # Twitter-specific implementation
+        return [SocialPost(...), ...]
+```
+
+**Why this is good:**
+- **Separation of concerns**: Instagram logic doesn't mix with Twitter logic
+- **Easy testing**: Test each platform independently
+- **Open/Closed Principle**: Add platforms without changing existing code
+
+### Pattern 2: Factory Pattern
+
+**Factory pattern automatically creates the right collector for each platform.**
+
+Users don't need to know which collector class to use:
 
 ```python
 class CollectorFactory:
-    _collectors = {}  # 註冊的收集器
-    
+    _collectors = {}  # Registry of available collectors
+
     @classmethod
     def create_collector(cls, platform: str, username: str, api_token: str):
+        """Factory method that creates the right collector"""
         platform_enum = PlatformType(platform)
         collector_class = cls._collectors[platform_enum]
         return collector_class(username, api_token)
+
+    @classmethod
+    def register_collector(cls, platform: PlatformType, collector_class):
+        """Register a new platform collector"""
+        cls._collectors[platform] = collector_class
 ```
 
-**優點:**
-- 客戶端不需要知道具體類別
-- 集中管理物件建立邏輯
-- 易於新增新平台
+**Usage:**
 
-### 3. 模板方法模式 (Template Method Pattern)
+```python
+# User doesn't need to know about InstagramCollector class
+collector = CollectorFactory.create_collector('instagram', 'nasa', token)
+```
 
-基類定義了通用的收集流程，子類別實作具體步驟。
+**Why this is good:**
+- **Centralized creation logic**: One place manages all collectors
+- **Client code is simple**: No need to import specific collector classes
+- **Easy registration**: Adding a platform is just one line
+
+### Pattern 3: Template Method Pattern
+
+**Template method defines a standard collection workflow.**
+
+The base class defines the steps, subclasses fill in the details:
 
 ```python
 class BaseSocialMediaCollector:
     def collect_all(self, post_limit, story_limit, include_stories):
-        # 定義固定流程
-        user = self.fetch_user_profile()  # 抽象方法
-        posts = self.fetch_posts(post_limit)  # 抽象方法
-        stories = self.fetch_stories(story_limit) if include_stories else []
-        return CollectionResult(user=user, posts=posts, stories=stories)
+        """Template method: defines the standard workflow"""
+
+        # Step 1: Fetch user profile (subclass implements)
+        user = self.fetch_user_profile()
+
+        # Step 2: Fetch posts (subclass implements)
+        posts = self.fetch_posts(post_limit)
+
+        # Step 3: Fetch stories if requested (subclass implements)
+        stories = []
+        if include_stories:
+            stories = self.fetch_stories(story_limit)
+
+        # Step 4: Package results
+        return CollectionResult(
+            platform=self.platform,
+            user=user,
+            posts=posts,
+            stories=stories
+        )
 ```
 
-**優點:**
-- 統一的執行流程
-- 避免重複程式碼
-- 保證一致性
+**Why this is good:**
+- **Consistent workflow**: All platforms follow the same steps
+- **No code duplication**: Common logic lives in base class
+- **Guaranteed completeness**: Can't forget a step
 
 ---
 
-## 資料模型設計
+## Data Models
 
-### 通用資料類別
+### Unified Data Classes
 
-使用 `dataclass` 定義跨平台統一的資料結構：
+**All platforms use the same data structures.**
+
+This makes cross-platform analysis easy:
+
+#### PlatformUser
+
+Represents any user/account/page across platforms:
 
 ```python
 @dataclass
 class PlatformUser:
-    """通用使用者模型"""
-    platform: PlatformType
-    user_id: str
-    username: str
-    display_name: Optional[str]
-    is_verified: bool
-    follower_count: int
-    # ... 所有平台共通的欄位
+    """Universal user model for all platforms"""
 
-@dataclass
-class SocialPost:
-    """通用貼文模型"""
-    platform: PlatformType
-    post_id: str
-    content_type: ContentType
-    text: Optional[str]
-    like_count: int
-    media_items: List[MediaItem]
-    # ... 所有平台共通的欄位
+    platform: PlatformType           # Which platform (instagram, facebook, etc.)
+    user_id: str                     # Platform-specific ID
+    username: str                    # Username/handle
+    display_name: Optional[str]      # Display name
+    is_verified: bool                # Verified account?
+    follower_count: int              # Number of followers
+    following_count: int             # Number following
+    post_count: int                  # Number of posts
+    bio: Optional[str]               # Profile bio/description
+    profile_pic_url: Optional[str]   # Profile picture URL
+    external_url: Optional[str]      # Website URL
+    # ... more common fields
 ```
 
-**設計原則:**
-- 涵蓋所有平台的共通欄位
-- 不存在的欄位使用 `Optional` 並設為 `None`
+#### SocialPost
 
-### 列舉類型
+Represents any post/tweet/thread across platforms:
+
+```python
+@dataclass
+class SocialPost:
+    """Universal post model for all platforms"""
+
+    platform: PlatformType           # Which platform
+    post_id: str                     # Platform-specific post ID
+    content_type: ContentType        # Type (post, tweet, reel, etc.)
+    text: Optional[str]              # Text content
+    like_count: int                  # Number of likes
+    comment_count: int               # Number of comments
+    share_count: int                 # Number of shares
+    view_count: int                  # Number of views
+    created_at: Optional[datetime]   # Post timestamp
+    post_url: Optional[str]          # URL to post
+    media_items: List[MediaItem]     # Attached media (images/videos)
+    hashtags: List[str]              # Hashtags used
+    mentions: List[str]              # Users mentioned
+    # ... more common fields
+```
+
+#### MediaItem
+
+Represents images and videos:
+
+```python
+@dataclass
+class MediaItem:
+    """Universal media model for all platforms"""
+
+    media_type: str                  # "image" or "video"
+    url: str                         # Media URL
+    thumbnail_url: Optional[str]     # Thumbnail URL
+    width: Optional[int]             # Width in pixels
+    height: Optional[int]            # Height in pixels
+    duration: Optional[float]        # Duration (for videos)
+```
+
+### Enum Types
+
+**Enums provide type safety:**
 
 ```python
 class PlatformType(Enum):
-    """平台類型"""
+    """Supported platforms"""
     INSTAGRAM = "instagram"
     FACEBOOK = "facebook"
     TWITTER = "twitter"
     THREADS = "threads"
 
 class ContentType(Enum):
-    """內容類型"""
+    """Content types"""
     POST = "post"
     TWEET = "tweet"
     REEL = "reel"
@@ -132,388 +260,835 @@ class ContentType(Enum):
     STORY = "story"
 ```
 
-**優點:**
-- 型別安全
-- 易於擴展
-- IDE 自動完成
+**Benefits:**
+- **Type checking**: Catch typos at development time
+- **IDE autocomplete**: Better developer experience
+- **Clear values**: No magic strings
+
+### Design Principle: Universal Fields
+
+**The data models include all fields that ANY platform might have.**
+
+If a platform doesn't support a field, it's set to `None` or a default value:
+
+```python
+# Instagram has stories, Facebook doesn't
+instagram_user = PlatformUser(
+    platform=PlatformType.INSTAGRAM,
+    username="nasa",
+    story_count=5,  # Instagram supports stories
+    # ...
+)
+
+facebook_user = PlatformUser(
+    platform=PlatformType.FACEBOOK,
+    username="nasa",
+    story_count=0,  # Facebook doesn't have stories, so it's 0
+    # ...
+)
+```
 
 ---
 
-## 模組劃分
+## Module Structure
 
-### Core 核心模組
-
-```
-core/
-├── base_collector.py       # 抽象基類
-├── data_models.py          # 通用資料模型
-├── factory.py              # 工廠管理器
-└── database_manager.py     # 資料庫管理器
-```
-
-**職責:**
-- 定義系統的核心介面和資料結構
-- 提供通用功能（資料庫、工廠等）
-- 與具體平台無關
-
-### Platforms 平台模組
+### Directory Organization
 
 ```
-platforms/
-├── instagram_collector.py
-├── facebook_collector.py
-├── twitter_collector.py
-└── threads_collector.py
+MediaCollect/
+├── core/                       # Core system (platform-independent)
+│   ├── base_collector.py      # Abstract base class for collectors
+│   ├── data_models.py          # Universal data models
+│   ├── factory.py              # Factory for creating collectors
+│   └── database_manager.py     # Database operations
+│
+├── platforms/                  # Platform implementations
+│   ├── instagram_collector.py # Instagram-specific code
+│   ├── facebook_collector.py  # Facebook-specific code
+│   ├── twitter_collector.py   # Twitter-specific code
+│   └── threads_collector.py   # Threads-specific code
+│
+├── lib/                        # Utilities (reusable tools)
+│   ├── logger.py              # Logging system
+│   ├── media_downloader.py    # Media file downloads
+│   ├── get_sql_connection.py  # Database connections
+│   └── discord_notify.py      # Discord notifications
+│
+├── config/                     # Configuration
+│   ├── platform_config.py     # Platform settings
+│   └── accounts_loader.py     # Account list loader
+│
+└── main.py                     # Main entry point
 ```
 
-**職責:**
-- 實作各平台的具體收集邏輯
-- 繼承自 `BaseSocialMediaCollector`
-- 將平台特定資料轉換為通用格式
+### Core Module
 
-### Lib 工具模組
+**Contains platform-independent code.**
+
+Purpose:
+- Define the abstract interface all platforms must follow
+- Provide universal data models
+- Manage the factory registry
+- Handle database operations
+
+Key principle: **Core code never imports from platforms.**
+
+### Platforms Module
+
+**Contains platform-specific implementations.**
+
+Each file is independent:
+- `instagram_collector.py` only knows about Instagram
+- `facebook_collector.py` only knows about Facebook
+- They don't know about each other
+
+Key principle: **Platforms inherit from core but don't modify it.**
+
+### Lib Module
+
+**Contains reusable utilities.**
+
+These tools are used by multiple parts of the system:
+- Logging (used by all collectors)
+- Media download (used by all collectors)
+- Database connections (used by database manager)
+
+Key principle: **Utilities have no business logic.**
+
+### Class Hierarchy
 
 ```
-lib/
-├── media_downloader.py      # 媒體下載
-├── get_sql_connection.py    # 資料庫連接
-└── discord_notify.py        # 通知功能
-```
+BaseSocialMediaCollector (Abstract)
+    ↓
+ApifyBasedCollector (Base for Apify-using platforms)
+    ↓
+    ├── InstagramCollector
+    │   └── InstagramHashtagCollector (Specialized for hashtags)
+    ├── FacebookCollector
+    ├── TwitterCollector
+    └── ThreadsCollector
 
-**職責:**
-- 提供可重用的工具函式
-- 與業務邏輯解耦
+CollectorFactory (Factory)
+    └── Creates and manages all collectors
+
+DatabaseManager (Database operations)
+    └── Saves data from any collector
+```
 
 ---
 
-## 資料庫設計
+## Database Design
 
-### 統一資料表結構
+### Unified Schema for All Platforms
 
-所有平台共用相同的資料表，透過 `platform` 欄位區分：
+**All platforms share the same tables.**
+
+The `platform` column differentiates data from different sources:
+
+#### Design Decision: One Table for All Platforms
+
+**Why not separate tables per platform?**
+
+❌ **Separate tables** (e.g., `instagram_users`, `facebook_users`):
+- Hard to query across platforms
+- Duplicated schema
+- More tables to maintain
+
+✅ **Unified tables** with `platform` column:
+- Easy cross-platform queries
+- Single schema to maintain
+- Natural joins work smoothly
+
+#### social_users Table
 
 ```sql
--- 使用者表
 CREATE TABLE social_users (
-    id INT PRIMARY KEY,
-    platform VARCHAR(20),  -- 區分平台
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    platform VARCHAR(20),          -- Differentiates platforms
     user_id VARCHAR(100),
     username VARCHAR(100),
-    -- ... 通用欄位
-    UNIQUE KEY (platform, user_id)
-);
+    display_name VARCHAR(200),
+    is_verified BOOLEAN,
+    follower_count INT,
+    following_count INT,
+    post_count INT,
+    bio TEXT,
+    profile_pic_url TEXT,
+    external_url TEXT,
+    -- ... more common fields
 
--- 貼文表
-CREATE TABLE social_posts (
-    id INT PRIMARY KEY,
-    platform VARCHAR(20),  -- 區分平台
-    post_id VARCHAR(100),
-    board_id INT,  -- 關聯到 social_users.id
-    -- ... 通用欄位
-    UNIQUE KEY (platform, post_id)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY unique_platform_user (platform, user_id)
 );
 ```
 
-**設計優點:**
-- 統一查詢介面
-- 易於跨平台分析
-- 減少資料表數量
+**Key design points:**
+- **Composite unique key** `(platform, user_id)` ensures no duplicates per platform
+- **Timestamps** track when data was first collected and last updated
+- **TEXT fields** for variable-length content (bio, URLs)
 
-**查詢範例:**
+#### social_posts Table
+
 ```sql
--- 查詢所有平台的熱門貼文
-SELECT platform, username, text, like_count
+CREATE TABLE social_posts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    platform VARCHAR(20),          -- Differentiates platforms
+    post_id VARCHAR(100),
+    content_type VARCHAR(20),      -- post, tweet, reel, etc.
+    board_id INT,                  -- Foreign key to social_users.id
+    text TEXT,
+    like_count INT,
+    comment_count INT,
+    share_count INT,
+    view_count INT,
+    created_at DATETIME,           -- Post creation time
+    post_url TEXT,
+    -- ... more fields
+
+    UNIQUE KEY unique_platform_post (platform, post_id),
+    FOREIGN KEY (board_id) REFERENCES social_users(id) ON DELETE CASCADE
+);
+```
+
+**Key design points:**
+- **Foreign key to users**: `board_id` links to who posted it
+- **ON DELETE CASCADE**: If user is deleted, their posts are deleted
+- **Nullable counts**: Some platforms don't provide all metrics
+
+### Cross-Platform Queries
+
+**Query all platforms together:**
+
+```sql
+-- Top posts across ALL platforms
+SELECT
+    u.platform,
+    u.username,
+    p.text,
+    p.like_count
 FROM social_posts p
 JOIN social_users u ON p.board_id = u.id
-WHERE like_count > 10000
-ORDER BY like_count DESC;
+WHERE p.like_count > 10000
+ORDER BY p.like_count DESC;
+```
 
--- 查詢特定平台
-SELECT * FROM social_posts 
+**Query specific platform:**
+
+```sql
+-- Instagram posts only
+SELECT * FROM social_posts
 WHERE platform = 'instagram';
 ```
 
+**Cross-platform user comparison:**
+
+```sql
+-- Compare follower count across platforms
+SELECT
+    platform,
+    username,
+    follower_count
+FROM social_users
+WHERE username IN ('nasa', 'natgeo')
+ORDER BY username, platform;
+```
+
+### Indexes for Performance
+
+**Create indexes on frequently queried columns:**
+
+```sql
+CREATE INDEX idx_platform ON social_users(platform);
+CREATE INDEX idx_username ON social_users(username);
+CREATE INDEX idx_created_at ON social_posts(created_at);
+CREATE INDEX idx_like_count ON social_posts(like_count);
+CREATE INDEX idx_board_id ON social_posts(board_id);
+```
+
+**When to add indexes:**
+- Columns used in `WHERE` clauses
+- Columns used in `ORDER BY`
+- Foreign keys (for joins)
+
+**Trade-off:** Indexes speed up reads but slow down writes. Balance based on your usage pattern.
+
 ---
 
-## 擴展機制
+## How to Add a New Platform
 
-### 新增平台的步驟
+**Adding a platform requires implementing just 4 methods.**
 
-#### Step 1: 建立收集器類別
+Let's add TikTok as an example.
+
+### Step 1: Create Collector Class
+
+Create `platforms/tiktok_collector.py`:
 
 ```python
-# platforms/tiktok_collector.py
+from core.base_collector import ApifyBasedCollector
+from core.data_models import PlatformType, PlatformUser, SocialPost, MediaItem
+from typing import Optional, List
+
 class TikTokCollector(ApifyBasedCollector):
+    """Collector for TikTok platform"""
+
     def __init__(self, username: str, api_token: str):
         super().__init__(username, api_token, PlatformType.TIKTOK)
-    
+
     def fetch_user_profile(self) -> Optional[PlatformUser]:
-        # 呼叫 Apify Actor
-        items = self.call_apify_actor(ACTOR_ID, run_input)
-        # 解析為通用格式
-        return PlatformUser(...)
-    
-    def fetch_posts(self, limit: int) -> List[SocialPost]:
-        # 實作貼文抓取
-        pass
-    
-    def fetch_stories(self, limit: Optional[int]) -> List[SocialPost]:
-        # 實作限時動態抓取
-        pass
-    
+        """Fetch TikTok user profile"""
+
+        # Define Apify Actor input
+        run_input = {
+            "usernames": [self.username],
+            "resultsLimit": 1
+        }
+
+        # Call Apify Actor
+        items = self.call_apify_actor(
+            actor_id="apify/tiktok-scraper",
+            run_input=run_input
+        )
+
+        if not items:
+            return None
+
+        raw = items[0]
+
+        # Map TikTok data to universal format
+        return PlatformUser(
+            platform=PlatformType.TIKTOK,
+            user_id=raw.get('id', ''),
+            username=raw.get('uniqueId', self.username),
+            display_name=raw.get('nickname'),
+            is_verified=raw.get('verified', False),
+            follower_count=raw.get('fans', 0),
+            following_count=raw.get('following', 0),
+            post_count=raw.get('video', 0),
+            bio=raw.get('signature'),
+            profile_pic_url=raw.get('avatarLarger'),
+            # ... map more fields
+        )
+
+    def fetch_posts(self, limit: int = 50) -> List[SocialPost]:
+        """Fetch TikTok videos"""
+
+        run_input = {
+            "usernames": [self.username],
+            "resultsLimit": limit
+        }
+
+        items = self.call_apify_actor(
+            actor_id="apify/tiktok-scraper",
+            run_input=run_input
+        )
+
+        posts = []
+        for raw in items:
+            # Parse video
+            post = SocialPost(
+                platform=PlatformType.TIKTOK,
+                post_id=raw.get('id', ''),
+                content_type=ContentType.POST,
+                text=raw.get('text'),
+                like_count=raw.get('diggCount', 0),
+                comment_count=raw.get('commentCount', 0),
+                share_count=raw.get('shareCount', 0),
+                view_count=raw.get('playCount', 0),
+                created_at=self._parse_timestamp(raw.get('createTime')),
+                post_url=raw.get('webVideoUrl'),
+                media_items=self._parse_media(raw),
+                # ... map more fields
+            )
+            posts.append(post)
+
+        return posts
+
+    def fetch_stories(self, limit: Optional[int] = None) -> List[SocialPost]:
+        """TikTok doesn't have stories feature"""
+        return []
+
     def download_media(self, post: SocialPost, save_dir: str) -> bool:
-        # 實作媒體下載
+        """Download TikTok video"""
+
+        # Implementation here
+        # Use self.media_downloader to download videos
         pass
+
+    def _parse_media(self, raw: dict) -> List[MediaItem]:
+        """Parse TikTok video into MediaItem"""
+        video_url = raw.get('videoUrl')
+        if not video_url:
+            return []
+
+        return [MediaItem(
+            media_type="video",
+            url=video_url,
+            thumbnail_url=raw.get('covers', {}).get('default'),
+            width=raw.get('width'),
+            height=raw.get('height'),
+            duration=raw.get('duration')
+        )]
 ```
 
-#### Step 2: 註冊到工廠
+### Step 2: Register the Collector
+
+Edit `core/factory.py`:
 
 ```python
-# core/factory.py
-from platforms.tiktok_collector import TikTokCollector
+from platforms.instagram_collector import InstagramCollector
+from platforms.facebook_collector import FacebookCollector
+from platforms.twitter_collector import TwitterCollector
+from platforms.threads_collector import ThreadsCollector
+from platforms.tiktok_collector import TikTokCollector  # Add this
 
 def register_all_collectors():
-    CollectorFactory.register_collector(PlatformType.TIKTOK, TikTokCollector)
+    """Register all available collectors"""
+    CollectorFactory.register_collector(PlatformType.INSTAGRAM, InstagramCollector)
+    CollectorFactory.register_collector(PlatformType.FACEBOOK, FacebookCollector)
+    CollectorFactory.register_collector(PlatformType.TWITTER, TwitterCollector)
+    CollectorFactory.register_collector(PlatformType.THREADS, ThreadsCollector)
+    CollectorFactory.register_collector(PlatformType.TIKTOK, TikTokCollector)  # Add this
 ```
 
-#### Step 3: 更新設定
+### Step 3: Add to Enum
+
+Edit `core/data_models.py`:
 
 ```python
-# config/platform_config.py
+class PlatformType(Enum):
+    INSTAGRAM = "instagram"
+    FACEBOOK = "facebook"
+    TWITTER = "twitter"
+    THREADS = "threads"
+    TIKTOK = "tiktok"  # Add this
+```
+
+### Step 4: Add Platform Settings
+
+Edit `config/platform_config.py`:
+
+```python
 PLATFORM_SETTINGS = {
+    # ... existing platforms
     'tiktok': {
         'enabled': True,
         'post_limit': 50,
+        'story_limit': None,
         'download_media': True,
     }
 }
 ```
 
-**完成！** 新平台可以直接使用：
+### Step 5: Use It!
 
 ```python
-collector = CollectorFactory.create_collector('tiktok', 'user', token)
-result = collector.collect_all()
+# Now TikTok works just like other platforms
+collector = CollectorFactory.create_collector('tiktok', 'username', api_token)
+result = collector.collect_all(post_limit=20)
+
+# Save to database (same code)
+with DatabaseManager(...) as db:
+    db.save_collection_result(result)
 ```
+
+**That's it!** The platform is fully integrated.
 
 ---
 
-## 錯誤處理機制
+## Error Handling
 
-### 1. 收集結果封裝
+### Multi-Level Error Handling Strategy
+
+**Errors are caught at multiple levels for graceful degradation.**
+
+#### Level 1: Method Level
+
+Individual methods catch their own errors:
+
+```python
+def fetch_posts(self, limit: int) -> List[SocialPost]:
+    """Fetch posts from platform"""
+    try:
+        items = self.call_apify_actor(actor_id, run_input)
+        return self._parse_posts(items)
+    except Exception as e:
+        logger.error(f"Failed to fetch posts: {e}")
+        return []  # Return empty list instead of crashing
+```
+
+**Benefit:** System continues even if one operation fails.
+
+#### Level 2: Collection Workflow Level
+
+The `collect_all` method packages results with status:
+
+```python
+def collect_all(self, post_limit, story_limit, include_stories):
+    """Collect all data with error handling"""
+    try:
+        user = self.fetch_user_profile()
+        posts = self.fetch_posts(post_limit)
+        stories = self.fetch_stories(story_limit) if include_stories else []
+
+        return CollectionResult(
+            platform=self.platform,
+            success=True,
+            user=user,
+            posts=posts,
+            stories=stories,
+            error_message=None
+        )
+    except Exception as e:
+        logger.error(f"Collection failed: {e}")
+        return CollectionResult(
+            platform=self.platform,
+            success=False,
+            error_message=str(e)
+        )
+```
+
+**Benefit:** Caller knows if collection succeeded or failed.
+
+#### Level 3: Batch Processing Level
+
+When collecting multiple users, errors don't stop the batch:
+
+```python
+def batch_collect(self, usernames):
+    """Collect from multiple users"""
+    for username in usernames:
+        try:
+            result = self.collect_user(username)
+            if result.success:
+                logger.info(f"✓ Collected {username}")
+            else:
+                logger.warning(f"✗ Failed {username}: {result.error_message}")
+        except Exception as e:
+            logger.error(f"✗ Error {username}: {e}")
+            notify_discord(f"Collection error for {username}")
+            continue  # Keep processing other users
+```
+
+**Benefit:** One failure doesn't ruin the entire batch.
+
+### CollectionResult Object
+
+**Encapsulates success/failure status:**
 
 ```python
 @dataclass
 class CollectionResult:
     platform: PlatformType
-    success: bool
-    user: Optional[PlatformUser]
-    posts: List[SocialPost]
-    stories: List[SocialPost]
-    error_message: Optional[str]
+    success: bool                    # Did collection succeed?
+    user: Optional[PlatformUser]     # User data (if successful)
+    posts: List[SocialPost]          # Posts collected
+    stories: List[SocialPost]        # Stories collected
+    error_message: Optional[str]     # Error (if failed)
+    started_at: datetime
+    finished_at: datetime
 ```
 
-**優點:**
-- 統一的錯誤回報格式
-- 可以部分成功（例如使用者資料成功，貼文失敗）
-- 易於記錄和通知
-
-### 2. 異常捕獲層級
+**Usage:**
 
 ```python
-# 層級 1: 方法層級
-def fetch_posts(self):
-    try:
-        # 抓取邏輯
-    except Exception as e:
-        print(f"抓取失敗: {e}")
-        return []  # 返回空列表
+result = collector.collect_all()
 
-# 層級 2: 收集流程層級
-def collect_all(self):
-    try:
-        # 完整流程
-    except Exception as e:
-        return CollectionResult(success=False, error_message=str(e))
-
-# 層級 3: 主程式層級
-def batch_collect(self):
-    for username in users:
-        try:
-            self.collect_user(username)
-        except Exception as e:
-            notify(f"錯誤: {e}")
-            continue  # 繼續處理下一個
+if result.success:
+    print(f"Collected {len(result.posts)} posts")
+    save_to_database(result)
+else:
+    print(f"Failed: {result.error_message}")
+    send_alert(result.error_message)
 ```
 
 ---
 
-## 效能優化
+## Performance Optimization
 
-### 1. 批次處理
+### Strategy 1: Batch Processing with Delays
+
+**Avoid rate limits by spacing out requests:**
 
 ```python
-# 批次延遲避免被限制
-for i, user in enumerate(users):
-    if i % BATCH_SIZE == 0 and i != 0:
-        time.sleep(random.randint(100, 300))
-    
-    collect_user(user)
-    time.sleep(random.randint(5, 13))
+# Process in batches
+BATCH_SIZE = 10
+DELAY_MIN = 5
+DELAY_MAX = 13
+BATCH_DELAY = 120
+
+for i, username in enumerate(usernames):
+    # Collect data
+    collect_user(username)
+
+    # Small delay between users
+    time.sleep(random.uniform(DELAY_MIN, DELAY_MAX))
+
+    # Longer delay after each batch
+    if (i + 1) % BATCH_SIZE == 0:
+        time.sleep(random.uniform(100, 300))
 ```
 
-### 2. 資料庫優化
+**Why random delays?** Looks more human, less likely to trigger anti-bot measures.
+
+### Strategy 2: Multi-Process Parallelism
+
+**Use multiple CPU cores for true parallelism:**
+
+```python
+from multiprocessing import Pool, cpu_count
+
+def collect_user_wrapper(username):
+    """Wrapper function for multiprocessing"""
+    collector = CollectorFactory.create_collector(platform, username, token)
+    return collector.collect_all()
+
+# Process users in parallel
+with Pool(processes=cpu_count()) as pool:
+    results = pool.map(collect_user_wrapper, usernames)
+```
+
+**Best for:** Apify Actors that may block/wait for long periods.
+
+### Strategy 3: Database Optimizations
+
+**Create indexes on query columns:**
 
 ```sql
--- 建立索引加速查詢
+-- Indexes for common queries
 CREATE INDEX idx_platform ON social_users(platform);
-CREATE INDEX idx_created ON social_posts(created_at);
+CREATE INDEX idx_created_at ON social_posts(created_at);
 CREATE INDEX idx_like_count ON social_posts(like_count);
+```
 
--- 分區表（大量資料時）
+**Partition large tables:**
+
+```sql
+-- Partition by year for historical data
 CREATE TABLE social_posts (
-    -- ...
+    -- ... columns
 ) PARTITION BY RANGE (YEAR(created_at)) (
     PARTITION p2023 VALUES LESS THAN (2024),
-    PARTITION p2024 VALUES LESS THAN (2025)
+    PARTITION p2024 VALUES LESS THAN (2025),
+    PARTITION p2025 VALUES LESS THAN (2026)
 );
 ```
 
-### 3. 媒體下載優化
+**Benefit:** Queries on specific time ranges only scan relevant partitions.
+
+### Strategy 4: Media Download Optimization
+
+**Skip already downloaded files:**
 
 ```python
-class MediaDownloader:
-    def download(self, url, file_path, overwrite=False):
-        # 檢查檔案是否已存在
-        if os.path.exists(file_path) and not overwrite:
-            return False
-        
-        # 重試機制
-        for attempt in range(self.retry_count):
-            try:
-                response = requests.get(url, timeout=self.timeout)
-                # 儲存檔案
-                return True
-            except Exception as e:
-                if attempt < self.retry_count - 1:
-                    time.sleep(random.uniform(2, 5))
+def download(self, url, file_path, overwrite=False):
+    """Download media file"""
+
+    # Skip if already exists
+    if os.path.exists(file_path) and not overwrite:
         return False
+
+    # Retry mechanism
+    for attempt in range(self.retry_count):
+        try:
+            response = requests.get(url, timeout=self.timeout)
+            with open(file_path, 'wb') as f:
+                f.write(response.content)
+            return True
+        except Exception as e:
+            if attempt < self.retry_count - 1:
+                time.sleep(random.uniform(2, 5))
+            else:
+                raise
+
+    return False
 ```
 
 ---
 
-## 測試策略
+## Testing Strategy
 
-### 1. 單元測試
+### Unit Testing
+
+**Test individual collectors:**
 
 ```python
 def test_instagram_collector():
+    """Test Instagram collector"""
     collector = InstagramCollector('instagram', APIFY_TOKEN)
-    
-    # 測試使用者資料抓取
+
+    # Test user profile
     user = collector.fetch_user_profile()
     assert user is not None
     assert user.platform == PlatformType.INSTAGRAM
     assert user.username == 'instagram'
-    
-    # 測試貼文抓取
+    assert user.follower_count > 0
+
+    # Test posts
     posts = collector.fetch_posts(limit=5)
     assert len(posts) > 0
     assert all(p.platform == PlatformType.INSTAGRAM for p in posts)
+    assert all(p.post_id for p in posts)
 ```
 
-### 2. 整合測試
+### Integration Testing
+
+**Test full workflow:**
 
 ```python
-def test_full_workflow():
-    # 建立收集器
-    collector = CollectorFactory.create_collector('instagram', 'user', token)
-    
-    # 執行收集
+def test_full_collection_workflow():
+    """Test end-to-end collection"""
+
+    # Create collector
+    collector = CollectorFactory.create_collector('instagram', 'nasa', token)
+
+    # Collect data
     result = collector.collect_all(post_limit=5)
-    
-    # 驗證結果
+
+    # Verify results
     assert result.success
     assert result.user is not None
     assert len(result.posts) > 0
-    
-    # 儲存到資料庫
-    with DatabaseManager(...) as db:
+
+    # Save to database
+    with DatabaseManager(config) as db:
         db.save_collection_result(result)
-    
-    # 驗證資料庫
-    # ...
+
+    # Verify database
+    with DatabaseManager(config) as db:
+        users = db.get_users(platform='instagram', username='nasa')
+        assert len(users) == 1
+```
+
+### Mock Testing
+
+**Test without calling real APIs:**
+
+```python
+from unittest.mock import Mock, patch
+
+def test_collector_with_mock():
+    """Test collector with mocked Apify"""
+
+    # Mock Apify response
+    mock_response = [{
+        'id': '123',
+        'username': 'test_user',
+        'followersCount': 1000
+    }]
+
+    with patch.object(collector, 'call_apify_actor', return_value=mock_response):
+        user = collector.fetch_user_profile()
+        assert user.username == 'test_user'
+        assert user.follower_count == 1000
 ```
 
 ---
 
-## 安全性考量
+## Security Considerations
 
-### 1. API Token 保護
+### API Token Protection
+
+**Never hard-code tokens:**
 
 ```python
-# 不要硬編碼在程式碼中
+# ❌ Bad - Hard-coded token
+APIFY_TOKEN = "apify_api_1234567890abcdef"
+
+# ✅ Good - Environment variable
 APIFY_TOKEN = os.getenv('APIFY_TOKEN')
 
-# 或從設定檔讀取
-with open('config.txt') as f:
+# ✅ Good - Config file
+with open('.env') as f:
     APIFY_TOKEN = f.read().strip()
 ```
 
-### 2. SQL 注入防護
+**Add sensitive files to .gitignore:**
+
+```gitignore
+.env
+accounts.txt
+config.txt
+sql_config.txt
+```
+
+### SQL Injection Prevention
+
+**Always use parameterized queries:**
 
 ```python
-# 使用參數化查詢
+# ❌ Bad - String concatenation
+query = f"SELECT * FROM users WHERE username = '{username}'"
+
+# ✅ Good - Parameterized query
 cursor.execute(
     "SELECT * FROM users WHERE platform = %s AND username = %s",
     (platform, username)
 )
 
-# 使用 SQLAlchemy
+# ✅ Good - SQLAlchemy/Pandas
 df.to_sql('table_name', engine, if_exists='append')
 ```
 
-### 3. 檔案路徑驗證
+### File Path Validation
+
+**Validate paths to prevent directory traversal:**
 
 ```python
 def download_media(self, url, file_path):
-    # 驗證檔案路徑
+    """Download media with path validation"""
+
+    # Prevent directory traversal
     if '..' in file_path:
-        raise ValueError("Invalid file path")
-    
-    # 限制儲存目錄
-    if not file_path.startswith(MEDIA_FOLDER_PATH):
+        raise ValueError("Invalid file path: contains '..'")
+
+    # Ensure within allowed directory
+    abs_path = os.path.abspath(file_path)
+    if not abs_path.startswith(os.path.abspath(MEDIA_FOLDER_PATH)):
         raise ValueError("Path outside allowed directory")
+
+    # Now safe to download
+    # ...
 ```
 
 ---
 
-## 總結
+## Summary
 
-### 核心優勢
+### Architecture Strengths
 
-✅ **高度可擴展**: 新增平台只需實作 4 個方法  
-✅ **統一介面**: 所有平台使用相同的 API  
-✅ **資料標準化**: 通用資料模型便於分析  
-✅ **易於維護**: 模組化設計，職責分明  
-✅ **錯誤容忍**: 完善的異常處理機制
+✅ **Highly extensible**: Add platforms by implementing 4 methods
+✅ **Unified interface**: Same API for all platforms
+✅ **Data standardization**: Cross-platform analysis is easy
+✅ **Maintainable**: Modular design, clear separation of concerns
+✅ **Error tolerant**: Multi-level error handling
 
-### 設計原則遵循
+### Design Principles
 
-- **SOLID 原則**: 單一職責、開放封閉、依賴反轉
-- **DRY 原則**: 避免重複程式碼
-- **關注點分離**: 核心、平台、工具完全分離
-- **介面隔離**: 最小化介面依賴
+**SOLID Principles:**
+- **Single Responsibility**: Each class has one job
+- **Open/Closed**: Open for extension (new platforms), closed for modification
+- **Liskov Substitution**: Any collector can substitute for BaseSocialMediaCollector
+- **Interface Segregation**: Minimal interface (just 4 methods)
+- **Dependency Inversion**: Depend on abstractions (BaseSocialMediaCollector) not concrete classes
 
-### 未來擴展方向
+**Other Principles:**
+- **DRY** (Don't Repeat Yourself): Common code in base classes
+- **Separation of Concerns**: Core, platforms, lib are independent
+- **Convention over Configuration**: Sensible defaults, customize when needed
 
-🚀 新增更多平台（TikTok, YouTube, LinkedIn）  
-🚀 非同步收集（asyncio）提升效能  
-🚀 機器學習整合（情感分析、標籤推薦）  
-🚀 Web 管理介面（Flask/Django）  
-🚀 RESTful API 服務
+### Future Extension Opportunities
+
+🚀 **More platforms**: TikTok, YouTube, LinkedIn, Reddit
+🚀 **Async collection**: Use asyncio for faster I/O
+🚀 **ML integration**: Sentiment analysis, content classification
+🚀 **Web interface**: Flask/Django dashboard
+🚀 **RESTful API**: HTTP API for remote collection
+🚀 **Real-time collection**: WebSocket streaming
+🚀 **Advanced analytics**: Trend detection, influencer identification
 
 ---
 
-**這個架構設計讓系統具備了長期維護和擴展的基礎！**
-
+**This architecture provides a solid foundation for long-term growth and maintenance!**

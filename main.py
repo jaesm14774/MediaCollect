@@ -139,9 +139,9 @@ class SocialMediaCrawler:
         參數:
             platform: 平台名稱 (instagram, ...)
             hashtag: hashtag（可含或不含 # 符號）
-                    - 單個 hashtag: str，例如 "timelessbruno"
-                    - 多個 hashtag: List[str]，例如 ["timelessbruno", "travel"]
-                    - 逗號分隔字串: str，例如 "timelessbruno,travel,food"
+                    - 單個 hashtag: str，例如 "elonmusk"
+                    - 多個 hashtag: List[str]，例如 ["elonmusk", "travel"]
+                    - 逗號分隔字串: str，例如 "elonmusk,travel,food"
             results_type: 結果類型 ("posts" 或 "reels")
             results_limit: 結果數量限制
         
@@ -1027,7 +1027,7 @@ def interactive_mode():
         # 輸入 hashtag
         print(f"\n請輸入 {platform.upper()} hashtag（可含或不含 # 符號）:")
         print("  提示: 支援單個或多個 hashtag（用逗號分隔）")
-        print("  範例: timelessbruno 或 timelessbruno,travel,food")
+        print("  範例: elonmusk 或 elonmusk,travel,food")
         hashtag = input(">>> ").strip()
         
         if not hashtag:
@@ -1103,11 +1103,11 @@ def main():
   python main.py --mode single --platform facebook --username nasa --posts-newer-than "1 month"
   
   # Hashtag 收集（單個）
-  python main.py --mode hashtag --platform instagram --hashtag timelessbruno
+  python main.py --mode hashtag --platform instagram --hashtag elonmusk
   
   # Hashtag 收集（多個，用逗號分隔）
-  python main.py --mode hashtag --platform instagram --hashtag "timelessbruno,travel,food"
-  python main.py --mode hashtag --platform instagram --hashtag "timelessbruno,travel,food" --results-type reels --results-limit 100
+  python main.py --mode hashtag --platform instagram --hashtag "elonmusk,travel,food"
+  python main.py --mode hashtag --platform instagram --hashtag "elonmusk,travel,food" --results-type reels --results-limit 100
   
   # 批次收集（從資料庫讀取使用者）
   python main.py --mode batch --platform twitter
@@ -1127,7 +1127,7 @@ def main():
                             '  all - 所有平台（從資料庫讀取）')
     parser.add_argument('--platform', type=str, help='平台名稱')
     parser.add_argument('--username', type=str, help='使用者名稱')
-    parser.add_argument('--hashtag', type=str, help='Hashtag（可含或不含 # 符號）。支援單個或多個（用逗號分隔），例如: "timelessbruno" 或 "timelessbruno,travel,food"')
+    parser.add_argument('--hashtag', type=str, help='Hashtag（可含或不含 # 符號）。支援單個或多個（用逗號分隔），例如: "elonmusk" 或 "elonmusk,travel,food"')
     parser.add_argument('--results-type', type=str, default='posts', 
                        choices=['posts', 'reels'],
                        help='Hashtag 收集的結果類型（預設: posts）')

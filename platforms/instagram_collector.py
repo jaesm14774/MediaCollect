@@ -15,6 +15,7 @@ from lib.media_downloader import MediaDownloader
 from typing import List, Optional, Dict, Any
 import datetime
 import json
+from config.platform_config import APIFY_ACTORS
 
 
 class InstagramCollector(ApifyBasedCollector):
@@ -29,9 +30,9 @@ class InstagramCollector(ApifyBasedCollector):
     """
     
     # Apify Actor IDs
-    PROFILE_SCRAPER = "apify/instagram-profile-scraper"
-    POST_SCRAPER = "apify/instagram-post-scraper"
-    STORY_SCRAPER = "igview-owner/instagram-story-viewer"
+    PROFILE_SCRAPER = APIFY_ACTORS['instagram']['profile']
+    POST_SCRAPER = APIFY_ACTORS['instagram']['post']
+    STORY_SCRAPER = APIFY_ACTORS['instagram']['story']
     
     def __init__(self, username: str, api_token: str):
         """
@@ -425,7 +426,7 @@ class InstagramHashtagCollector(InstagramCollector):
     """
     
     # Apify Actor ID for hashtag scraping
-    HASHTAG_SCRAPER = "apify/instagram-hashtag-scraper"
+    HASHTAG_SCRAPER = APIFY_ACTORS['instagram']['hashtag']
     
     def __init__(self, hashtag, api_token: str, results_type: str = "posts", results_limit: int = 50):
         """
@@ -433,8 +434,8 @@ class InstagramHashtagCollector(InstagramCollector):
         
         參數:
             hashtag: Instagram hashtag 或 hashtag 列表（可含或不含 # 符號）
-                    - 單個 hashtag: str，例如 "timelessbruno"
-                    - 多個 hashtag: List[str]，例如 ["timelessbruno", "travel", "food"]
+                    - 單個 hashtag: str，例如 "elonmusk"
+                    - 多個 hashtag: List[str]，例如 ["elonmusk", "travel", "food"]
             api_token: Apify API Token
             results_type: 結果類型 ("posts" 或 "reels")
             results_limit: 每個 hashtag 的結果數量限制
