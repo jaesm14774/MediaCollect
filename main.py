@@ -1076,7 +1076,10 @@ def interactive_mode():
 def main():
     """主程式入口"""
     import argparse
-    
+
+    # 取得腳本所在目錄,用於處理相對路徑
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
     parser = argparse.ArgumentParser(
         description='通用社群媒體資料收集系統',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1151,7 +1154,11 @@ def main():
                        help='多進程模式下的進程數量（預設: CPU 核心數）')
     
     args = parser.parse_args()
-    
+
+    # 將 accounts_file 轉換為絕對路徑（如果是相對路徑）
+    if not os.path.isabs(args.accounts_file):
+        args.accounts_file = os.path.join(script_dir, args.accounts_file)
+
     if args.mode == 'interactive':
         # 互動式模式
         interactive_mode()
