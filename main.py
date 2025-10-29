@@ -325,10 +325,14 @@ class SocialMediaCrawler:
                 )
             
             # 執行收集
+            # include_stories 邏輯：如果 story_limit 是 None（收集全部）或 > 0（收集指定數量），則啟用
+            # 如果 story_limit 是 0，則不收集
+            include_stories = (story_limit is None or story_limit > 0)
+            
             result = collector.collect_all(
                 post_limit=post_limit,
                 story_limit=story_limit,
-                include_stories=(story_limit is not None or story_limit != 0),
+                include_stories=include_stories,
                 photo_limit=photo_limit,
                 include_photos=(photo_limit is not None and photo_limit > 0),
                 posts_newer_than=posts_newer_than,
@@ -521,10 +525,14 @@ class SocialMediaCrawler:
                 )
             
             # 執行異步收集
+            # include_stories 邏輯：如果 story_limit 是 None（收集全部）或 > 0（收集指定數量），則啟用
+            # 如果 story_limit 是 0，則不收集
+            include_stories = (story_limit is None or story_limit > 0)
+            
             result = await collector.collect_all_async(
                 post_limit=post_limit,
                 story_limit=story_limit,
-                include_stories=(story_limit is not None or story_limit != 0)
+                include_stories=include_stories
             )
             
             # 儲存到資料庫
