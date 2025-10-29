@@ -142,7 +142,7 @@ class InstagramCollector(ApifyBasedCollector):
         """抓取限時動態"""
         try:
             run_input = {
-                "username": self.username
+                "usernames": [self.username]
             }
             
             result_items = self.call_apify_actor(self.STORY_SCRAPER, run_input)
