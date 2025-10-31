@@ -56,22 +56,14 @@ class FacebookCollector(ApifyBasedCollector):
         self.downloader = MediaDownloader()
         self.logger = get_logger('FacebookCollector')
     
-    # =========================================================================
-    # 實作抽象方法
-    # =========================================================================
-    
     def fetch_user_profile(self) -> Optional[PlatformUser]:
         """
         抓取粉絲專頁基本資料
         使用 apify/facebook-pages-scraper
         """
         try:
-            # 建構專頁 URL
             page_url = f"https://www.facebook.com/{self.username}"
-            
-            run_input = {
-                "startUrls": [{"url": page_url}]
-            }
+            run_input = {"startUrls": [{"url": page_url}]}
             
             self.logger.info(f"正在抓取粉絲專頁資料: {page_url}")
             items = self.call_apify_actor(self.PAGE_SCRAPER, run_input)
@@ -80,13 +72,9 @@ class FacebookCollector(ApifyBasedCollector):
                 self.logger.warning(f"未取得粉絲專頁資料: {self.username}")
                 return None
             
-            # 解析第一筆結果
             raw = items[0]
-            
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 解析專頁資料
             user = PlatformUser(
                 platform=PlatformType.FACEBOOK,
                 user_id=raw.get('pageId') or raw.get('facebookId', ''),
@@ -165,24 +153,18 @@ class FacebookCollector(ApifyBasedCollector):
         """
         try:
             page_url = f"https://www.facebook.com/{self.username}"
-            
             run_input = {
                 "startUrls": [{"url": page_url}],
                 "resultsLimit": limit
             }
             
-            # 添加時間範圍參數
             if only_posts_newer_than:
                 run_input["onlyPostsNewerThan"] = only_posts_newer_than
-            
             if only_posts_older_than:
                 run_input["onlyPostsOlderThan"] = only_posts_older_than
-            
-            # 添加影片字幕提取參數
             if caption_text:
                 run_input["captionText"] = True
             
-            # 記錄時間範圍資訊
             time_range_info = ""
             if only_posts_newer_than or only_posts_older_than:
                 time_range_parts = []
@@ -199,7 +181,6 @@ class FacebookCollector(ApifyBasedCollector):
                 self.logger.warning(f"未取得任何貼文: {self.username}")
                 return []
             
-            # 解析貼文
             posts = []
             for item in items:
                 post = self._parse_post(item)
@@ -222,7 +203,6 @@ class FacebookCollector(ApifyBasedCollector):
         """
         try:
             page_url = f"https://www.facebook.com/{self.username}"
-            
             run_input = {
                 "startUrls": [{"url": page_url}],
                 "resultsLimit": limit
@@ -235,7 +215,6 @@ class FacebookCollector(ApifyBasedCollector):
                 self.logger.warning(f"未取得任何照片: {self.username}")
                 return []
             
-            # 解析照片為貼文格式
             posts = []
             for item in items:
                 post = self._parse_photo(item)
@@ -261,26 +240,16 @@ class FacebookCollector(ApifyBasedCollector):
         return []
     
     def download_media(self, post: SocialPost, save_dir: str) -> bool:
-        """下載貼文中的媒體檔案"""
         try:
-            # 建立粉絲專頁目錄
             user_dir = os.path.join(save_dir, self.username)
             os.makedirs(user_dir, exist_ok=True)
             
-            # 下載所有媒體
             success_count = 0
             for index, media in enumerate(post.media_items):
-                # 決定副檔名
-                if media.media_type == MediaType.VIDEO:
-                    ext = 'mp4'
-                else:
-                    ext = 'jpg'
-                
-                # 建立檔名
+                ext = 'mp4' if media.media_type == MediaType.VIDEO else 'jpg'
                 filename = f"{post.post_id}_{index}.{ext}"
                 file_path = os.path.join(user_dir, filename)
                 
-                # 下載
                 if self.downloader.download(media.url, file_path):
                     media.local_path = file_path
                     success_count += 1
@@ -300,19 +269,14 @@ class FacebookCollector(ApifyBasedCollector):
         解析貼文資料（from apify/facebook-posts-scraper）
         """
         try:
-            # 基本資訊
             post_id = raw.get('postId') or raw.get('postFacebookId', '')
             if not post_id:
                 self.logger.debug("跳過沒有 postId 的項目")
                 return None
             
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
-            
-            # 時間資訊 - 處理多種格式
             created_at = self._parse_timestamp(raw)
             
-            # 建立貼文物件
             post = SocialPost(
                 platform=PlatformType.FACEBOOK,
                 post_id=post_id,
@@ -329,9 +293,7 @@ class FacebookCollector(ApifyBasedCollector):
                 raw_data=raw_data_json
             )
             
-            # 解析媒體
             post.media_items = self._parse_post_media(raw)
-            
             return post
         
         except Exception as e:
@@ -345,7 +307,6 @@ class FacebookCollector(ApifyBasedCollector):
         解析照片資料（from apify/facebook-photos-scraper）
         """
         try:
-            # 從 URL 中提取 photo ID
             photo_url = raw.get('url', '')
             photo_id = raw.get('id', '')
             
@@ -353,10 +314,8 @@ class FacebookCollector(ApifyBasedCollector):
                 self.logger.debug("跳過沒有 ID 的照片")
                 return None
             
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 建立貼文物件（照片視為特殊貼文）
             post = SocialPost(
                 platform=PlatformType.FACEBOOK,
                 post_id=photo_id or photo_url,
@@ -371,7 +330,6 @@ class FacebookCollector(ApifyBasedCollector):
                 raw_data=raw_data_json
             )
             
-            # 解析照片媒體
             image_url = raw.get('image')
             if image_url:
                 post.media_items = [MediaItem(
@@ -389,7 +347,6 @@ class FacebookCollector(ApifyBasedCollector):
     
     def _parse_timestamp(self, raw: Dict[str, Any]) -> Optional[datetime.datetime]:
         """解析時間戳記"""
-        # 嘗試從 timestamp 欄位解析（毫秒）
         timestamp = raw.get('timestamp')
         if timestamp:
             try:
@@ -397,12 +354,9 @@ class FacebookCollector(ApifyBasedCollector):
             except:
                 pass
         
-        # 嘗試從 time 欄位解析（字串格式）
         time_str = raw.get('time')
         if time_str and isinstance(time_str, str):
             try:
-                # 嘗試多種日期格式
-                # 例如: "Thursday, 6 April 2023 at 07:10"
                 return datetime.datetime.strptime(time_str, "%A, %d %B %Y at %H:%M")
             except:
                 try:
@@ -419,19 +373,15 @@ class FacebookCollector(ApifyBasedCollector):
         """
         media_items = []
         
-        # 優先處理 media 陣列（主要的媒體來源）
         media_array = raw.get('media', [])
         if media_array and isinstance(media_array, list):
             for media_obj in media_array:
-                # 跳過非圖片/影片的物件（例如 mediaset_token）
                 if not isinstance(media_obj, dict):
                     continue
                 
-                # 判斷媒體類型
                 typename = media_obj.get('__typename', '')
                 is_playable = media_obj.get('is_playable', False)
                 
-                # 處理影片
                 if typename == 'Video' or is_playable:
                     video_url = media_obj.get('playable_url') or media_obj.get('video_url')
                     if video_url:
@@ -443,27 +393,21 @@ class FacebookCollector(ApifyBasedCollector):
                         ))
                         continue
                 
-                # 處理圖片
                 if typename == 'Photo' or 'photo_image' in media_obj or 'image' in media_obj:
-                    # 嘗試從各種欄位取得圖片 URL（優先使用高解析度圖片）
                     image_url = None
                     thumbnail_url = None
                     
-                    # 優先順序：photo_image > image > thumbnail
                     if 'photo_image' in media_obj and isinstance(media_obj['photo_image'], dict):
                         image_url = media_obj['photo_image'].get('uri')
                     elif 'image' in media_obj and isinstance(media_obj['image'], dict):
                         image_url = media_obj['image'].get('uri')
                     elif 'url' in media_obj and isinstance(media_obj['url'], str):
-                        # 確保是圖片 URL 而不是網頁 URL
                         url_str = media_obj['url']
                         if any(ext in url_str.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', 'fbcdn.net']):
                             image_url = url_str
                     
-                    # 縮圖
                     thumbnail_url = media_obj.get('thumbnail')
                     
-                    # 如果找到圖片 URL，加入列表
                     if image_url:
                         media_items.append(MediaItem(
                             media_type=MediaType.IMAGE,
@@ -471,9 +415,7 @@ class FacebookCollector(ApifyBasedCollector):
                             thumbnail_url=thumbnail_url or image_url
                         ))
         
-        # 如果沒有從 media 陣列找到任何媒體，嘗試舊的欄位（向後兼容）
         if not media_items:
-            # 縮圖（通常是預覽圖）
             thumb_url = raw.get('thumb')
             if thumb_url:
                 media_items.append(MediaItem(
@@ -482,17 +424,14 @@ class FacebookCollector(ApifyBasedCollector):
                     thumbnail_url=thumb_url
                 ))
             
-            # 連結（可能包含外部連結）
             link_url = raw.get('link')
             if link_url and link_url not in [m.url for m in media_items]:
-                # 如果是圖片連結，加入媒體列表
                 if any(ext in link_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
                     media_items.append(MediaItem(
                         media_type=MediaType.IMAGE,
                         url=link_url
                     ))
             
-            # 其他可能的圖片欄位
             images = raw.get('images', [])
             for image_url in images:
                 if image_url and image_url not in [m.url for m in media_items]:
@@ -501,13 +440,12 @@ class FacebookCollector(ApifyBasedCollector):
                         url=image_url
                     ))
             
-            # 影片
             video_url = raw.get('video')
             if video_url:
                 media_items.append(MediaItem(
                     media_type=MediaType.VIDEO,
                     url=video_url,
-                    thumbnail_url=thumb_url  # 使用縮圖作為影片預覽
+                    thumbnail_url=thumb_url
                 ))
         
         return media_items

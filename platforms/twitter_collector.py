@@ -60,10 +60,6 @@ class TwitterCollector(ApifyBasedCollector):
         self.downloader = MediaDownloader()
         self.logger = get_logger('TwitterCollector')
     
-    # =========================================================================
-    # 實作抽象方法
-    # =========================================================================
-    
     def fetch_user_profile(self) -> Optional[PlatformUser]:
         """
         抓取使用者基本資料
@@ -81,13 +77,9 @@ class TwitterCollector(ApifyBasedCollector):
                 self.logger.warning(f"未取得用戶資料: @{self.username}")
                 return None
             
-            # 解析 Apify 資料為通用格式
             raw = items[0]
-            
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 解析 website 物件
             website_url = None
             if raw.get('website'):
                 if isinstance(raw['website'], dict):
@@ -97,7 +89,7 @@ class TwitterCollector(ApifyBasedCollector):
             
             user = PlatformUser(
                 platform=PlatformType.TWITTER,
-                user_id=raw.get('user_id') or raw.get('username', self.username),  # 如果沒有 user_id，使用 username
+                user_id=raw.get('user_id') or raw.get('username', self.username),
                 username=raw.get('username', self.username),
                 display_name=raw.get('display_name', ''),
                 is_verified=raw.get('verified', False),
@@ -133,19 +125,15 @@ class TwitterCollector(ApifyBasedCollector):
             only_posts_older_than: 只抓取此日期之前的貼文 (格式: YYYY-MM-DD)
         """
         try:
-            # 建構基本搜尋詞
             search_term = f"from:{self.username}"
             
-            # 加入時間過濾條件
             if only_posts_newer_than:
-                # 將日期格式轉換為 YYYY-MM-DD（如果是相對時間則需要轉換）
                 date_str = self._parse_date_string(only_posts_newer_than)
                 if date_str:
                     search_term += f" since:{date_str}"
                     self.logger.info(f"  - 時間過濾: 只抓取 {date_str} 之後的貼文")
             
             if only_posts_older_than:
-                # 將日期格式轉換為 YYYY-MM-DD（如果是相對時間則需要轉換）
                 date_str = self._parse_date_string(only_posts_older_than)
                 if date_str:
                     search_term += f" until:{date_str}"
@@ -154,7 +142,7 @@ class TwitterCollector(ApifyBasedCollector):
             run_input = {
                 "searchTerms": [search_term],
                 "maxItems": limit,
-                "sort": "Latest"  # 最新優先
+                "sort": "Latest"
             }
             
             self.logger.info(f"正在抓取推文 (limit={limit}): @{self.username}")
@@ -165,7 +153,6 @@ class TwitterCollector(ApifyBasedCollector):
                 self.logger.warning(f"未取得任何推文: @{self.username}")
                 return []
             
-            # 解析推文
             posts = []
             for item in items:
                 post = self._parse_post(item)
@@ -188,20 +175,15 @@ class TwitterCollector(ApifyBasedCollector):
         return []
     
     def download_media(self, post: SocialPost, save_dir: str) -> bool:
-        """下載推文中的媒體檔案"""
         try:
-            # 建立使用者目錄
             user_dir = os.path.join(save_dir, self.username)
             os.makedirs(user_dir, exist_ok=True)
             
-            # 下載所有媒體
             success_count = 0
             for index, media in enumerate(post.media_items):
-                # 決定副檔名
                 if media.media_type == MediaType.VIDEO:
                     ext = 'mp4'
                 elif media.media_type == MediaType.IMAGE:
-                    # 從 URL 判斷圖片格式，預設為 jpg
                     url_lower = media.url.lower()
                     if '.png' in url_lower:
                         ext = 'png'
@@ -214,11 +196,9 @@ class TwitterCollector(ApifyBasedCollector):
                 else:
                     ext = 'jpg'
                 
-                # 建立檔名
                 filename = f"{post.post_id}_{index}.{ext}"
                 file_path = os.path.join(user_dir, filename)
                 
-                # 下載
                 if self.downloader.download(media.url, file_path):
                     media.local_path = file_path
                     success_count += 1
@@ -237,23 +217,16 @@ class TwitterCollector(ApifyBasedCollector):
             traceback.print_exc()
             return False
     
-    # =========================================================================
-    # 私有方法 - 資料解析
-    # =========================================================================
-    
     def _parse_post(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
         """解析推文資料 (from xtdata/twitter-x-scraper)"""
         try:
-            # 基本資訊 - 支援多種欄位名稱格式
             post_id = raw.get('id') or raw.get('tweetId') or raw.get('id_str', '')
             if not post_id:
                 self.logger.debug("跳過沒有 id/tweetId 的項目")
                 return None
             
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 判斷內容類型
             is_retweet = raw.get('isRetweet', False) or raw.get('retweeted', False)
             is_reply = raw.get('isReply', False)
             is_quote = raw.get('is_quote_status', False)

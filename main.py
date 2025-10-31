@@ -12,12 +12,9 @@ from typing import List, Optional
 from multiprocessing import Pool, cpu_count
 from functools import partial
 
-# 導入核心模組
 from core.factory import CollectorFactory, register_all_collectors
 from core.database_manager import create_database_manager_from_config
 from core.data_models import CollectionResult, HashtagCollectionResult
-
-# 導入設定
 from config.platform_config import (
     APIFY_TOKEN, MEDIA_FOLDER_PATH, SQL_CONFIGURE_PATH, DISCORD_PATH,
     PLATFORM_SETTINGS, MIN_DELAY, MAX_DELAY, BATCH_SIZE, 
@@ -27,21 +24,13 @@ from config.accounts_loader import (
     load_accounts_from_file, get_accounts_for_platform, 
     get_all_enabled_accounts, validate_accounts_file
 )
-
-# 導入通知模組
 from lib.discord_notify import notify
-
-# 導入日誌模組
 from lib.logger import get_logger
 
-# 建立全域 logger
 logger = get_logger('MediaCollect')
 
 
-# =========================================================================
-# 多進程輔助函數（必須在類別外部，才能被 pickle 序列化）
-# =========================================================================
-
+# 必須在類別外部，才能被 multiprocessing.Pool 序列化
 def _multiprocess_collect_single_user(args):
     """
     在獨立進程中收集單一使用者的資料
@@ -57,16 +46,11 @@ def _multiprocess_collect_single_user(args):
     platform, username = args
     
     try:
-        # 在子進程中重新註冊收集器
         register_all_collectors()
-        
-        # 建立新的 crawler 實例
         crawler = SocialMediaCrawler()
         
         try:
-            # 執行收集
             result = crawler.collect_user(platform, username)
-            
             return {
                 'username': username,
                 'success': result.success,
@@ -75,7 +59,6 @@ def _multiprocess_collect_single_user(args):
                 'story_count': len(result.stories) if result.success else 0
             }
         finally:
-            # 確保關閉資源
             crawler.close()
     
     except Exception as e:
@@ -104,19 +87,12 @@ class SocialMediaCrawler:
     """
     
     def __init__(self):
-        """初始化收集器"""
-        # 註冊所有平台收集器
         register_all_collectors()
-        
-        # 建立資料庫管理器
         self.db = create_database_manager_from_config(SQL_CONFIGURE_PATH)
         
-        # 載入 Discord 通知設定
-        # 優先使用環境變數
         import os
         self.discord_token = os.getenv('DISCORD_WEBHOOK_URL')
         
-        # 如果環境變數沒有，嘗試從檔案讀取（向下相容）
         if not self.discord_token:
             try:
                 if os.path.exists(DISCORD_PATH):
@@ -149,9 +125,7 @@ class SocialMediaCrawler:
             HashtagCollectionResult 物件
         """
         try:
-            # 建立 hashtag 收集器
             logger.info(f"{'='*60}")
-            # 處理 hashtag 顯示
             if isinstance(hashtag, str):
                 if ',' in hashtag:
                     hashtag_display = ', '.join(['#' + h.strip().lstrip('#') for h in hashtag.split(',') if h.strip()])
@@ -184,27 +158,23 @@ class SocialMediaCrawler:
                     error_message=error_msg
                 )
             
-            # 執行收集
             result = collector.collect_hashtag()
             
-            # 下載媒體檔案
             if result.success and result.posts:
                 logger.info(f"[{platform.upper()}] 開始下載 {len(result.posts)} 個貼文的媒體檔案...")
                 for post in result.posts:
                     collector.download_media(post, MEDIA_FOLDER_PATH)
                 logger.info(f"[{platform.upper()}] 媒體下載完成")
             
-            # 儲存到資料庫
             if result.success:
                 self.db.save_hashtag_collection_result(result)
             
-            # 儲存收集歷史記錄
             self.db.save_collection_history(
                 platform=platform,
-                username=f"hashtag_{result.hashtag}",  # 使用 hashtag 作為 username
+                username=f"hashtag_{result.hashtag}",
                 success=result.success,
                 post_count=len(result.posts),
-                story_count=0,  # hashtag 收集沒有限時動態
+                story_count=0,
                 error_message=result.error_message,
                 started_at=result.started_at,
                 finished_at=result.finished_at,
@@ -219,11 +189,9 @@ class SocialMediaCrawler:
             error_msg = f"Hashtag 收集失敗: {str(e)}\n{traceback.format_exc()}"
             logger.error(f"[錯誤] {error_msg}")
             
-            # 發送錯誤通知
             if self.discord_token:
                 notify(self.discord_token, f"[{platform.upper()}] Hashtag 收集失敗 - #{hashtag}:\n{str(e)}")
             
-            # 處理 hashtag 字串以保存歷史記錄
             if isinstance(hashtag, str):
                 if ',' in hashtag:
                     hashtag_str = ','.join([h.strip().lstrip('#') for h in hashtag.split(',') if h.strip()])
@@ -234,7 +202,6 @@ class SocialMediaCrawler:
             else:
                 hashtag_str = str(hashtag).lstrip('#')
             
-            # 儲存失敗的收集歷史記錄
             try:
                 self.db.save_collection_history(
                     platform=platform,
@@ -288,7 +255,6 @@ class SocialMediaCrawler:
             CollectionResult 物件
         """
         try:
-            # 取得平台設定
             if post_limit is None:
                 post_limit = get_platform_setting(platform, 'post_limit', 50)
             if story_limit is None:
@@ -304,7 +270,6 @@ class SocialMediaCrawler:
             if caption_text is None:
                 caption_text = get_platform_setting(platform, 'caption_text', False)
             
-            # 建立收集器
             logger.info(f"{'='*60}")
             logger.info(f"[{platform.upper()}] 開始處理使用者: {username}")
             logger.info(f"{'='*60}")
@@ -324,11 +289,7 @@ class SocialMediaCrawler:
                     error_message=error_msg
                 )
             
-            # 執行收集
-            # include_stories 邏輯：如果 story_limit 是 None（收集全部）或 > 0（收集指定數量），則啟用
-            # 如果 story_limit 是 0，則不收集
             include_stories = (story_limit is None or story_limit > 0)
-            
             result = collector.collect_all(
                 post_limit=post_limit,
                 story_limit=story_limit,
@@ -340,15 +301,11 @@ class SocialMediaCrawler:
                 caption_text=caption_text
             )
             
-            # 儲存到資料庫
             if result.success:
                 self.db.save_collection_result(result)
-                
-                # 下載媒體
                 if download_media:
                     self._download_media_for_result(result, collector)
             
-            # 儲存收集歷史記錄
             self.db.save_collection_history(
                 platform=platform,
                 username=username,
@@ -396,18 +353,12 @@ class SocialMediaCrawler:
             )
     
     def _download_media_for_result(self, result: CollectionResult, collector):
-        """下載收集結果中的媒體檔案"""
         try:
             logger.info(f"[{result.platform.value}] 開始下載媒體檔案...")
-            
-            # 下載貼文媒體
             for post in result.posts:
                 collector.download_media(post, MEDIA_FOLDER_PATH)
-            
-            # 下載限時動態媒體
             for story in result.stories:
                 collector.download_media(story, MEDIA_FOLDER_PATH)
-            
             logger.info(f"[{result.platform.value}] 媒體下載完成")
         
         except Exception as e:
@@ -425,7 +376,6 @@ class SocialMediaCrawler:
             platform: 平台名稱
             username_list: 使用者名稱列表 (None 表示從資料庫讀取)
         """
-        # 如果沒有提供使用者列表，從資料庫讀取
         if username_list is None:
             users_df = self.db.get_active_users(platform=platform)
             username_list = users_df['username'].tolist()
@@ -434,7 +384,6 @@ class SocialMediaCrawler:
             logger.warning(f"[{platform}] 沒有要處理的使用者")
             return
         
-        # 隨機打亂順序（避免規律性）
         import numpy as np
         username_list = np.random.choice(
             username_list, 
@@ -447,19 +396,14 @@ class SocialMediaCrawler:
         logger.info(f"使用者數量: {len(username_list)}")
         logger.info(f"{'='*60}")
         
-        # 批次處理
         for i, username in enumerate(username_list):
-            # 批次延遲
             if i % BATCH_SIZE == 0 and i != 0:
                 delay = random.randint(BATCH_DELAY_MIN, BATCH_DELAY_MAX)
                 logger.info(f"[批次延遲] 等待 {delay} 秒...")
                 time.sleep(delay)
             
-            # 收集資料
             try:
                 result = self.collect_user(platform, username)
-                
-                # 使用者間延遲
                 delay = random.randint(MIN_DELAY, MAX_DELAY)
                 logger.info(f"[延遲] 等待 {delay} 秒...")
                 time.sleep(delay)
@@ -496,7 +440,6 @@ class SocialMediaCrawler:
             CollectionResult 物件
         """
         try:
-            # 取得平台設定
             if post_limit is None:
                 post_limit = get_platform_setting(platform, 'post_limit', 50)
             if story_limit is None:
@@ -504,7 +447,6 @@ class SocialMediaCrawler:
             if download_media is None:
                 download_media = get_platform_setting(platform, 'download_media', True)
             
-            # 建立收集器
             logger.info(f"{'='*60}")
             logger.info(f"[{platform.upper()}] 開始處理使用者: {username}")
             logger.info(f"{'='*60}")
@@ -524,26 +466,18 @@ class SocialMediaCrawler:
                     error_message=error_msg
                 )
             
-            # 執行異步收集
-            # include_stories 邏輯：如果 story_limit 是 None（收集全部）或 > 0（收集指定數量），則啟用
-            # 如果 story_limit 是 0，則不收集
             include_stories = (story_limit is None or story_limit > 0)
-            
             result = await collector.collect_all_async(
                 post_limit=post_limit,
                 story_limit=story_limit,
                 include_stories=include_stories
             )
             
-            # 儲存到資料庫
             if result.success:
                 self.db.save_collection_result(result)
-                
-                # 下載媒體
                 if download_media:
                     self._download_media_for_result(result, collector)
             
-            # 儲存收集歷史記錄
             self.db.save_collection_history(
                 platform=platform,
                 username=username,
@@ -604,7 +538,6 @@ class SocialMediaCrawler:
             username_list: 使用者名稱列表 (None 表示從資料庫讀取)
             concurrent_limit: 同時並發的任務數量（預設3個）
         """
-        # 如果沒有提供使用者列表，從資料庫讀取
         if username_list is None:
             users_df = self.db.get_active_users(platform=platform)
             username_list = users_df['username'].tolist()
@@ -613,7 +546,6 @@ class SocialMediaCrawler:
             logger.warning(f"[{platform}] 沒有要處理的使用者")
             return
         
-        # 隨機打亂順序（避免規律性）
         import numpy as np
         username_list = np.random.choice(
             username_list, 
@@ -627,20 +559,15 @@ class SocialMediaCrawler:
         logger.info(f"並發限制: {concurrent_limit} 個同時任務")
         logger.info(f"{'='*60}")
         
-        # 使用 Semaphore 限制並發數量
         semaphore = asyncio.Semaphore(concurrent_limit)
         
         async def collect_with_semaphore(username: str):
-            """使用信號量控制並發的收集任務"""
             async with semaphore:
                 try:
-                    # 加入隨機延遲，避免同時發送請求
                     delay = random.uniform(1, 3)
                     await asyncio.sleep(delay)
                     
                     result = await self.async_collect_user(platform, username)
-                    
-                    # 使用者間延遲
                     delay = random.randint(MIN_DELAY, MAX_DELAY)
                     logger.info(f"[延遲] 等待 {delay} 秒...")
                     await asyncio.sleep(delay)
@@ -652,13 +579,8 @@ class SocialMediaCrawler:
                         notify(self.discord_token, f"[{platform}] 錯誤 - {username}: {e}")
                     return None
         
-        # 建立所有任務
         tasks = [collect_with_semaphore(username) for username in username_list]
-        
-        # 並發執行所有任務
         results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 統計結果
         success_count = sum(1 for r in results if r and isinstance(r, CollectionResult) and r.success)
         fail_count = len(results) - success_count
         
@@ -683,7 +605,6 @@ class SocialMediaCrawler:
             username_list: 使用者名稱列表 (None 表示從資料庫讀取)
             num_processes: 進程數量（None 使用 CPU 核心數）
         """
-        # 如果沒有提供使用者列表，從資料庫讀取
         if username_list is None:
             users_df = self.db.get_active_users(platform=platform)
             username_list = users_df['username'].tolist()
@@ -692,7 +613,6 @@ class SocialMediaCrawler:
             logger.warning(f"[{platform}] 沒有要處理的使用者")
             return
         
-        # 隨機打亂順序（避免規律性）
         import numpy as np
         username_list = np.random.choice(
             username_list, 
@@ -700,7 +620,6 @@ class SocialMediaCrawler:
             replace=False
         ).tolist()
         
-        # 決定進程數量
         if num_processes is None:
             num_processes = min(cpu_count(), len(username_list))
         
@@ -710,25 +629,17 @@ class SocialMediaCrawler:
         logger.info(f"進程數量: {num_processes} (CPU 核心數: {cpu_count()})")
         logger.info(f"{'='*60}")
         
-        # 記錄開始時間
         start_time = time.time()
-        
-        # 準備參數列表（每個元素是 (platform, username) 元組）
         task_args = [(platform, username) for username in username_list]
         
-        # 使用多進程池處理
         try:
             with Pool(processes=num_processes) as pool:
-                # 使用全域函數 _multiprocess_collect_single_user
                 results = pool.map(_multiprocess_collect_single_user, task_args)
             
-            # 統計結果
             success_count = sum(1 for r in results if r['success'])
             fail_count = len(results) - success_count
             total_posts = sum(r.get('post_count', 0) for r in results)
             total_stories = sum(r.get('story_count', 0) for r in results)
-            
-            # 計算執行時間
             elapsed_time = time.time() - start_time
             
             logger.info(f"{'='*60}")
@@ -739,7 +650,6 @@ class SocialMediaCrawler:
             logger.info(f"平均每個使用者: {elapsed_time/len(username_list):.2f} 秒")
             logger.info(f"{'='*60}")
             
-            # 顯示失敗的使用者
             if fail_count > 0:
                 logger.warning("失敗的使用者:")
                 for r in results:
@@ -766,13 +676,11 @@ class SocialMediaCrawler:
             accounts_file: 帳號配置檔路徑
             num_processes: 進程數量（None 使用 CPU 核心數）
         """
-        # 驗證配置檔
         if not validate_accounts_file(accounts_file):
             logger.error(f"帳號配置檔無效或不存在: {accounts_file}")
             logger.info(f"請複製 accounts.example.txt 為 accounts.txt 並填入帳號")
             return
         
-        # 載入所有帳號
         all_accounts = get_all_enabled_accounts(accounts_file)
         
         if not all_accounts:
@@ -783,9 +691,7 @@ class SocialMediaCrawler:
         logger.info("每日收集模式（多進程）- 從配置檔載入帳號")
         logger.info("="*60)
         
-        # 逐平台收集
         for platform, username_list in all_accounts.items():
-            # 檢查平台是否啟用
             if not PLATFORM_SETTINGS.get(platform, {}).get('enabled', False):
                 logger.info(f"[跳過] {platform.upper()} 平台未啟用")
                 continue
@@ -800,7 +706,6 @@ class SocialMediaCrawler:
                 logger.info(f"帳號數量: {len(username_list)}")
                 logger.info(f"{'='*60}")
                 
-                # 使用多進程批次收集
                 self.multiprocess_batch_collect(platform, username_list, num_processes)
                 
                 logger.info(f"[{platform.upper()}] 完成收集")
@@ -834,13 +739,11 @@ class SocialMediaCrawler:
         參數:
             accounts_file: 帳號配置檔路徑
         """
-        # 驗證配置檔
         if not validate_accounts_file(accounts_file):
             logger.error(f"帳號配置檔無效或不存在: {accounts_file}")
             logger.info(f"請複製 accounts.example.txt 為 accounts.txt 並填入帳號")
             return
         
-        # 載入所有帳號
         all_accounts = get_all_enabled_accounts(accounts_file)
         
         if not all_accounts:
@@ -851,9 +754,7 @@ class SocialMediaCrawler:
         logger.info("每日收集模式 - 從配置檔載入帳號")
         logger.info("="*60)
         
-        # 逐平台收集
         for platform, username_list in all_accounts.items():
-            # 檢查平台是否啟用
             if not PLATFORM_SETTINGS.get(platform, {}).get('enabled', False):
                 logger.info(f"[跳過] {platform.upper()} 平台未啟用")
                 continue
@@ -868,7 +769,6 @@ class SocialMediaCrawler:
                 logger.info(f"帳號數量: {len(username_list)}")
                 logger.info(f"{'='*60}")
                 
-                # 使用 batch_collect，但提供帳號列表
                 self.batch_collect(platform, username_list)
                 
                 logger.info(f"[{platform.upper()}] 完成收集")
@@ -894,13 +794,11 @@ class SocialMediaCrawler:
             accounts_file: 帳號配置檔路徑
             concurrent_limit: 同時並發的任務數量（預設3個）
         """
-        # 驗證配置檔
         if not validate_accounts_file(accounts_file):
             logger.error(f"帳號配置檔無效或不存在: {accounts_file}")
             logger.info(f"請複製 accounts.example.txt 為 accounts.txt 並填入帳號")
             return
         
-        # 載入所有帳號
         all_accounts = get_all_enabled_accounts(accounts_file)
         
         if not all_accounts:
@@ -911,9 +809,7 @@ class SocialMediaCrawler:
         logger.info("每日收集模式（異步）- 從配置檔載入帳號")
         logger.info("="*60)
         
-        # 逐平台收集
         for platform, username_list in all_accounts.items():
-            # 檢查平台是否啟用
             if not PLATFORM_SETTINGS.get(platform, {}).get('enabled', False):
                 logger.info(f"[跳過] {platform.upper()} 平台未啟用")
                 continue
@@ -928,7 +824,6 @@ class SocialMediaCrawler:
                 logger.info(f"帳號數量: {len(username_list)}")
                 logger.info(f"{'='*60}")
                 
-                # 使用異步批次收集
                 await self.async_batch_collect(platform, username_list, concurrent_limit)
                 
                 logger.info(f"[{platform.upper()}] 完成收集")
@@ -943,18 +838,15 @@ class SocialMediaCrawler:
         logger.info("="*60)
     
     def close(self):
-        """關閉資源"""
         self.db.close()
         logger.info("已關閉所有資源連接")
 
 
 def interactive_mode():
-    """互動式測試模式"""
     logger.info("="*60)
     logger.info("通用社群媒體資料收集系統 - 互動式測試")
     logger.info("="*60)
     
-    # 選擇模式
     print("\n請選擇收集模式:")
     print("  1. 使用者收集")
     print("  2. Hashtag 收集")
@@ -969,14 +861,11 @@ def interactive_mode():
         return
     
     if mode_choice == 1:
-        # 使用者收集模式
-        # 顯示支援的平台
         supported_platforms = CollectorFactory.get_supported_platforms()
         logger.info("\n支援的平台:")
         for i, platform in enumerate(supported_platforms, 1):
             logger.info(f"  {i}. {platform.upper()}")
         
-        # 選擇平台
         print("\n請選擇平台 (輸入數字):")
         try:
             choice = int(input(">>> "))
@@ -988,7 +877,6 @@ def interactive_mode():
             logger.error("無效的輸入")
             return
         
-        # 輸入使用者名稱
         print(f"\n請輸入 {platform.upper()} 使用者名稱:")
         username = input(">>> ").strip()
         
@@ -996,7 +884,6 @@ def interactive_mode():
             logger.error("使用者名稱不能為空")
             return
         
-        # 執行收集
         crawler = SocialMediaCrawler()
         try:
             result = crawler.collect_user(platform, username)
@@ -1009,8 +896,6 @@ def interactive_mode():
             crawler.close()
     
     elif mode_choice == 2:
-        # Hashtag 收集模式
-        # 顯示支援 hashtag 收集的平台
         supported_hashtag_platforms = CollectorFactory.get_supported_hashtag_platforms()
         if not supported_hashtag_platforms:
             logger.error("目前沒有平台支援 hashtag 收集")
@@ -1020,7 +905,6 @@ def interactive_mode():
         for i, platform in enumerate(supported_hashtag_platforms, 1):
             logger.info(f"  {i}. {platform.upper()}")
         
-        # 選擇平台
         print("\n請選擇平台 (輸入數字):")
         try:
             choice = int(input(">>> "))
@@ -1032,7 +916,6 @@ def interactive_mode():
             logger.error("無效的輸入")
             return
         
-        # 輸入 hashtag
         print(f"\n請輸入 {platform.upper()} hashtag（可含或不含 # 符號）:")
         print("  提示: 支援單個或多個 hashtag（用逗號分隔）")
         print("  範例: elonmusk 或 elonmusk,travel,food")
@@ -1042,7 +925,6 @@ def interactive_mode():
             logger.error("Hashtag 不能為空")
             return
         
-        # 輸入結果類型（僅限 Instagram）
         results_type = "posts"
         if platform == "instagram":
             print("\n請選擇結果類型:")
@@ -1055,7 +937,6 @@ def interactive_mode():
             except:
                 pass
         
-        # 輸入結果數量限制
         print("\n請輸入結果數量限制 (預設: 50):")
         try:
             results_limit_input = input(">>> ").strip()
@@ -1063,7 +944,6 @@ def interactive_mode():
         except:
             results_limit = 50
         
-        # 執行收集
         crawler = SocialMediaCrawler()
         try:
             result = crawler.collect_hashtag(
@@ -1082,10 +962,8 @@ def interactive_mode():
 
 
 def main():
-    """主程式入口"""
     import argparse
 
-    # 取得腳本所在目錄,用於處理相對路徑
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     parser = argparse.ArgumentParser(
@@ -1163,38 +1041,31 @@ def main():
     
     args = parser.parse_args()
 
-    # 將 accounts_file 轉換為絕對路徑（如果是相對路徑）
     if not os.path.isabs(args.accounts_file):
         args.accounts_file = os.path.join(script_dir, args.accounts_file)
 
     if args.mode == 'interactive':
-        # 互動式模式
         interactive_mode()
     
     elif args.mode == 'daily':
-        # 每日收集模式（從配置檔讀取帳號）
         crawler = SocialMediaCrawler()
         try:
             if args.use_multiprocess:
-                # 多進程模式（推薦：適合 Apify Actor 阻塞情況）
                 crawler.multiprocess_collect_from_accounts_file(
                     args.accounts_file, 
                     args.num_processes
                 )
             elif args.use_async:
-                # 異步模式
                 asyncio.run(crawler.async_collect_from_accounts_file(
                     args.accounts_file, 
                     args.concurrent_limit
                 ))
             else:
-                # 同步模式
                 crawler.collect_from_accounts_file(args.accounts_file)
         finally:
             crawler.close()
     
     elif args.mode == 'single':
-        # 單一使用者模式
         if not args.platform or not args.username:
             logger.error("單一使用者模式需要指定 --platform 和 --username")
             return
@@ -1215,7 +1086,6 @@ def main():
             crawler.close()
     
     elif args.mode == 'hashtag':
-        # Hashtag 收集模式
         if not args.platform or not args.hashtag:
             logger.error("Hashtag 收集模式需要指定 --platform 和 --hashtag")
             return
@@ -1232,7 +1102,6 @@ def main():
             crawler.close()
     
     elif args.mode == 'batch':
-        # 批次模式（從資料庫讀取）
         if not args.platform:
             logger.error("批次模式需要指定 --platform")
             return
@@ -1240,27 +1109,23 @@ def main():
         crawler = SocialMediaCrawler()
         try:
             if args.use_multiprocess:
-                # 多進程模式（推薦：適合 Apify Actor 阻塞情況）
                 crawler.multiprocess_batch_collect(
                     args.platform, 
                     None, 
                     args.num_processes
                 )
             elif args.use_async:
-                # 異步模式
                 asyncio.run(crawler.async_batch_collect(
                     args.platform, 
                     None, 
                     args.concurrent_limit
                 ))
             else:
-                # 同步模式
                 crawler.batch_collect(args.platform)
         finally:
             crawler.close()
     
     elif args.mode == 'all':
-        # 所有平台批次模式（從資料庫讀取）
         crawler = SocialMediaCrawler()
         try:
             crawler.collect_all_platforms()

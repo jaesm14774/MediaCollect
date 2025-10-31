@@ -21,10 +21,7 @@ class CollectorFactory:
         result = collector.collect_all()
     """
     
-    # 儲存已註冊的收集器類別
     _collectors: Dict[PlatformType, Type[BaseSocialMediaCollector]] = {}
-    
-    # 儲存已註冊的 hashtag 收集器類別
     _hashtag_collectors: Dict[PlatformType, Type] = {}
     
     @classmethod
@@ -79,7 +76,6 @@ class CollectorFactory:
         返回:
             收集器實例，若平台不支援則返回 None
         """
-        # 將字串轉換為 PlatformType
         try:
             platform_enum = PlatformType(platform.lower())
         except ValueError:
@@ -87,13 +83,11 @@ class CollectorFactory:
             print(f"[Factory] 支援的平台: {', '.join([p.value for p in PlatformType])}")
             return None
         
-        # 檢查是否已註冊該平台的收集器
         if platform_enum not in cls._collectors:
             print(f"[Factory] {platform} 收集器尚未實作")
             print(f"[Factory] 已實作的平台: {', '.join([p.value for p in cls._collectors.keys()])}")
             return None
         
-        # 建立收集器實例
         collector_class = cls._collectors[platform_enum]
         try:
             collector = collector_class(
@@ -159,7 +153,6 @@ class CollectorFactory:
         返回:
             hashtag 收集器實例，若平台不支援則返回 None
         """
-        # 將字串轉換為 PlatformType
         try:
             platform_enum = PlatformType(platform.lower())
         except ValueError:
@@ -167,13 +160,11 @@ class CollectorFactory:
             print(f"[Factory] 支援的平台: {', '.join([p.value for p in PlatformType])}")
             return None
         
-        # 檢查是否已註冊該平台的 hashtag 收集器
         if platform_enum not in cls._hashtag_collectors:
             print(f"[Factory] {platform} Hashtag 收集器尚未實作")
             print(f"[Factory] 已實作 Hashtag 收集的平台: {', '.join([p.value for p in cls._hashtag_collectors.keys()])}")
             return None
         
-        # 建立 hashtag 收集器實例
         collector_class = cls._hashtag_collectors[platform_enum]
         try:
             collector = collector_class(
@@ -207,7 +198,6 @@ def register_all_collectors():
     """
     from .data_models import PlatformType
     
-    # Instagram (包含使用者收集和 Hashtag 收集)
     try:
         from platforms.instagram_collector import InstagramCollector, InstagramHashtagCollector
         CollectorFactory.register_collector(PlatformType.INSTAGRAM, InstagramCollector)
@@ -215,14 +205,12 @@ def register_all_collectors():
     except ImportError as e:
         print(f"[Factory] 無法載入 Instagram 收集器: {e}")
     
-    # Facebook
     try:
         from platforms.facebook_collector import FacebookCollector
         CollectorFactory.register_collector(PlatformType.FACEBOOK, FacebookCollector)
     except ImportError as e:
         print(f"[Factory] 無法載入 Facebook 收集器: {e}")
     
-    # Twitter (包含使用者收集、Hashtag 收集和進階搜尋)
     try:
         from platforms.twitter_collector import TwitterCollector, TwitterHashtagCollector
         CollectorFactory.register_collector(PlatformType.TWITTER, TwitterCollector)
@@ -230,7 +218,6 @@ def register_all_collectors():
     except ImportError as e:
         print(f"[Factory] 無法載入 Twitter 收集器: {e}")
     
-    # Threads
     try:
         from platforms.threads_collector import ThreadsCollector, ThreadsHashtagCollector
         CollectorFactory.register_collector(PlatformType.THREADS, ThreadsCollector)

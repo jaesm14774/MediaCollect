@@ -49,10 +49,6 @@ class InstagramCollector(ApifyBasedCollector):
         )
         self.downloader = MediaDownloader()
     
-    # =========================================================================
-    # 實作抽象方法
-    # =========================================================================
-    
     def fetch_user_profile(self) -> Optional[PlatformUser]:
         """抓取使用者基本資料"""
         try:
@@ -67,12 +63,9 @@ class InstagramCollector(ApifyBasedCollector):
                 print(f"  [Instagram] ℹ 未取得使用者資料（可能原因：帳號不存在、帳號私密、網路錯誤）")
                 return None
             
-            # 解析 Apify 資料為通用格式
             raw = items[0]
-            
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 處理 category 欄位（避免字串 "None" 的問題）
             category_value = raw.get('businessCategoryName')
             if category_value == "None" or category_value == "null":
                 category_value = None
@@ -92,7 +85,7 @@ class InstagramCollector(ApifyBasedCollector):
                 following_count=raw.get('followsCount', 0),
                 post_count=raw.get('postsCount', 0),
                 external_url=raw.get('externalUrl'),
-                raw_data=raw_data_json  # 儲存完整原始資料
+                raw_data=raw_data_json
             )
             
             return user
@@ -120,7 +113,6 @@ class InstagramCollector(ApifyBasedCollector):
                 print(f"  [Instagram] ℹ 未取得貼文資料（可能原因：無新貼文、帳號私密、網路錯誤）")
                 return []
             
-            # 解析貼文
             posts = []
             for item in items:
                 post = self._parse_post(item)
@@ -151,7 +143,6 @@ class InstagramCollector(ApifyBasedCollector):
                 print(f"  [Instagram] ℹ 未取得限時動態資料（可能原因：無限時動態、帳號私密、網路錯誤）")
                 return []
             
-            # 解析限時動態（新格式: [{"requested": "username", "stories": [...]}]）
             stories = []
             for item in result_items:
                 if 'stories' in item and isinstance(item['stories'], list):
@@ -163,7 +154,6 @@ class InstagramCollector(ApifyBasedCollector):
             if len(stories) == 0 and len(result_items) > 0:
                 print(f"  [Instagram] ℹ 取得了原始資料但無有效限時動態（可能該使用者目前沒有限時動態）")
             
-            # 套用數量限制
             if limit is not None and len(stories) > limit:
                 stories = stories[:limit]
             
@@ -176,26 +166,16 @@ class InstagramCollector(ApifyBasedCollector):
             return []
     
     def download_media(self, post: SocialPost, save_dir: str) -> bool:
-        """下載貼文中的媒體檔案"""
         try:
-            # 建立使用者目錄
             user_dir = os.path.join(save_dir, self.username)
             os.makedirs(user_dir, exist_ok=True)
             
-            # 下載所有媒體
             success_count = 0
             for index, media in enumerate(post.media_items):
-                # 決定副檔名
-                if media.media_type == MediaType.VIDEO:
-                    ext = 'mp4'
-                else:
-                    ext = 'jpg'
-                
-                # 建立檔名
+                ext = 'mp4' if media.media_type == MediaType.VIDEO else 'jpg'
                 filename = f"{post.post_id}_{index}.{ext}"
                 file_path = os.path.join(user_dir, filename)
                 
-                # 下載
                 if self.downloader.download(media.url, file_path):
                     media.local_path = file_path
                     success_count += 1
@@ -206,22 +186,15 @@ class InstagramCollector(ApifyBasedCollector):
             print(f"[Instagram] 下載媒體失敗: {e}")
             return False
     
-    # =========================================================================
-    # 私有方法 - 資料解析
-    # =========================================================================
-    
     def _parse_post(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
         """解析貼文資料"""
         try:
-            # 基本資訊
             post_id = raw.get('shortCode') or raw.get('code', '')
             if not post_id:
                 return None
             
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 作者資訊
             owner = raw.get('ownerUsername') or raw.get('owner', {})
             if isinstance(owner, dict):
                 author_username = owner.get('username', self.username)
@@ -230,14 +203,12 @@ class InstagramCollector(ApifyBasedCollector):
                 author_username = owner or self.username
                 author_id = ''
             
-            # 判斷內容類型
             product_type = raw.get('productType', '').lower()
             if 'reel' in product_type or 'clips' in product_type:
                 content_type = ContentType.REEL
             else:
                 content_type = ContentType.POST
             
-            # 時間資訊
             timestamp = raw.get('timestamp')
             if timestamp:
                 if isinstance(timestamp, str):
@@ -247,7 +218,6 @@ class InstagramCollector(ApifyBasedCollector):
             else:
                 created_at = None
             
-            # 建立貼文物件
             post = SocialPost(
                 platform=PlatformType.INSTAGRAM,
                 post_id=post_id,
@@ -263,13 +233,10 @@ class InstagramCollector(ApifyBasedCollector):
                 location_name=self._get_location_name(raw),
                 created_at=created_at,
                 post_url=f"https://www.instagram.com/p/{post_id}/",
-                raw_data=raw_data_json  # 儲存完整原始資料
+                raw_data=raw_data_json
             )
             
-            # 解析媒體
             post.media_items = self._parse_media(raw)
-            
-            # 解析標籤
             post.hashtags = self._extract_hashtags(post.text)
             
             return post
@@ -281,20 +248,16 @@ class InstagramCollector(ApifyBasedCollector):
     def _parse_story(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
         """解析限時動態資料"""
         try:
-            # Story ID
             story_id = raw.get('pk')
             if not story_id:
                 return None
             
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 作者資訊
             user = raw.get('user', {})
             author_id = user.get('id', '')
             author_username = user.get('username', self.username)
             
-            # 時間資訊
             taken_at = raw.get('taken_at')
             if taken_at:
                 created_at = datetime.datetime.fromtimestamp(taken_at)
@@ -303,7 +266,6 @@ class InstagramCollector(ApifyBasedCollector):
                 created_at = None
                 expires_at = None
             
-            # 建立限時動態物件
             story = SocialPost(
                 platform=PlatformType.INSTAGRAM,
                 post_id=str(story_id),
@@ -312,13 +274,11 @@ class InstagramCollector(ApifyBasedCollector):
                 author_username=author_username,
                 created_at=created_at,
                 expires_at=expires_at,
-                raw_data=raw_data_json  # 儲存完整原始資料
+                raw_data=raw_data_json
             )
             
-            # 解析媒體
             video_versions = raw.get('video_versions', [])
             if video_versions:
-                # 影片
                 video_url = video_versions[0].get('url')
                 if video_url:
                     story.media_items.append(MediaItem(
@@ -327,7 +287,7 @@ class InstagramCollector(ApifyBasedCollector):
                         width=video_versions[0].get('width'),
                         height=video_versions[0].get('height')
                     ))
-            # 圖片
+            
             image_versions2 = raw.get('image_versions2', {})
             candidates = image_versions2.get('candidates', [])
             if candidates:
@@ -349,16 +309,12 @@ class InstagramCollector(ApifyBasedCollector):
     def _parse_media(self, raw: Dict[str, Any]) -> List[MediaItem]:
         """解析媒體項目"""
         media_items = []
-        
-        # 判斷媒體類型
         media_type = raw.get('type')
         
         if media_type == 'Sidecar':
-            # 輪播貼文 - 解析所有子媒體
             children = raw.get('childPosts') or raw.get('sidecarChildren', [])
             for child in children:
                 if child.get('type') == 'Video' or child.get('videoUrl'):
-                    # 影片
                     video_url = child.get('videoUrl')
                     if video_url:
                         media_items.append(MediaItem(
@@ -368,7 +324,6 @@ class InstagramCollector(ApifyBasedCollector):
                             duration=child.get('videoDuration')
                         ))
                 else:
-                    # 圖片
                     image_url = child.get('displayUrl') or child.get('imageUrl')
                     if image_url:
                         media_items.append(MediaItem(
@@ -376,9 +331,7 @@ class InstagramCollector(ApifyBasedCollector):
                             url=image_url
                         ))
         else:
-            # 單張圖片或單個影片
             if media_type == 'Video' or raw.get('videoUrl'):
-                # 影片
                 video_url = raw.get('videoUrl')
                 if video_url:
                     media_items.append(MediaItem(
@@ -388,7 +341,6 @@ class InstagramCollector(ApifyBasedCollector):
                         duration=raw.get('videoDuration')
                     ))
             
-            # 圖片（影片貼文也會有預覽圖）
             image_url = raw.get('displayUrl') or raw.get('imageUrl')
             if image_url and not raw.get('videoUrl'):
                 media_items.append(MediaItem(
@@ -509,15 +461,12 @@ class InstagramHashtagCollector(InstagramCollector):
                 print(f"開始收集 Instagram Hashtags: {', '.join(['#' + h for h in clean_hashtags])}")
             print(f"{'='*60}")
             
-            # 抓取貼文
             print(f"\n[步驟 1/1] 抓取 hashtag 貼文...")
             posts = self._fetch_hashtag_posts(clean_hashtags, r_type, r_limit)
             
-            # 計算執行時長
             finished_at = datetime.datetime.now()
             duration_seconds = int((finished_at - started_at).total_seconds())
             
-            # 返回結果（hashtag 欄位使用第一個或逗號連接的形式）
             hashtag_display = ','.join(clean_hashtags)
             result = HashtagCollectionResult(
                 platform=self.platform,
@@ -574,7 +523,6 @@ class InstagramHashtagCollector(InstagramCollector):
             results_limit: 結果數量限制
         """
         try:
-            # 統一處理為列表
             if isinstance(hashtags, str):
                 hashtag_list = [hashtags]
             elif isinstance(hashtags, list):
@@ -594,11 +542,8 @@ class InstagramHashtagCollector(InstagramCollector):
                 print(f"  [Instagram Hashtag] ℹ 未取得貼文資料（可能原因：無相關貼文、網路錯誤）")
                 return []
             
-            # 解析貼文
             posts = []
             for item in items:
-                # 嘗試從 item 中取得該貼文對應的 hashtag
-                # Apify 可能會在 item 中包含 hashtag 資訊
                 item_hashtag = item.get('hashtag') or item.get('queryHashtag') or hashtag_list[0]
                 post = self._parse_hashtag_post(item, item_hashtag)
                 if post:
@@ -618,20 +563,16 @@ class InstagramHashtagCollector(InstagramCollector):
     def _parse_hashtag_post(self, raw: Dict[str, Any], hashtag: str) -> Optional[HashtagPost]:
         """解析 hashtag 貼文資料"""
         try:
-            # 基本資訊
             post_id = raw.get('shortCode') or raw.get('id', '')
             if not post_id:
                 return None
             
-            # 將原始資料轉為 JSON 字串
             raw_data_json = json.dumps(raw, ensure_ascii=False)
             
-            # 作者資訊（hashtag 收集的資料結構稍有不同）
             author_username = raw.get('ownerUsername', '')
             author_id = raw.get('ownerId', '')
             author_display_name = raw.get('ownerFullName', '')
             
-            # 判斷內容類型
             product_type = raw.get('productType', '').lower()
             post_type = raw.get('type', '').lower()
             
@@ -640,11 +581,9 @@ class InstagramHashtagCollector(InstagramCollector):
             else:
                 content_type = ContentType.POST
             
-            # 時間資訊
             timestamp = raw.get('timestamp')
             if timestamp:
                 if isinstance(timestamp, str):
-                    # 處理 ISO 8601 格式
                     timestamp = timestamp.replace('Z', '+00:00')
                     created_at = datetime.datetime.fromisoformat(timestamp)
                 else:
@@ -652,7 +591,6 @@ class InstagramHashtagCollector(InstagramCollector):
             else:
                 created_at = None
             
-            # 建立 hashtag 貼文物件
             post = HashtagPost(
                 platform=PlatformType.INSTAGRAM,
                 post_id=post_id,
@@ -674,16 +612,13 @@ class InstagramHashtagCollector(InstagramCollector):
                 hashtag=hashtag
             )
             
-            # 解析媒體（重用父類別的 _parse_media 方法）
             post.media_items = self._parse_media(raw)
             
-            # 解析標籤（從 raw 的 hashtags 或從 caption 提取）
             if 'hashtags' in raw and isinstance(raw['hashtags'], list):
                 post.hashtags = raw['hashtags']
             else:
                 post.hashtags = self._extract_hashtags(post.text)
             
-            # 解析提及
             if 'mentions' in raw and isinstance(raw['mentions'], list):
                 post.mentions = raw['mentions']
             
@@ -694,10 +629,6 @@ class InstagramHashtagCollector(InstagramCollector):
             import traceback
             traceback.print_exc()
             return None
-    
-    # =========================================================================
-    # 實作基類的抽象方法（這些方法在 hashtag 收集中不使用）
-    # =========================================================================
     
     def fetch_user_profile(self):
         """不使用於 hashtag 收集"""
@@ -723,24 +654,15 @@ class InstagramHashtagCollector(InstagramCollector):
             是否成功下載
         """
         try:
-            # 建立 hashtag 目錄（使用第一個關鍵詞）
             hashtag_dir = os.path.join(save_dir, f"hashtag_{self.hashtags[0]}")
             os.makedirs(hashtag_dir, exist_ok=True)
             
-            # 下載所有媒體
             success_count = 0
             for index, media in enumerate(post.media_items):
-                # 決定副檔名
-                if media.media_type == MediaType.VIDEO:
-                    ext = 'mp4'
-                else:
-                    ext = 'jpg'
-                
-                # 建立檔名（使用 post_id 和 index）
+                ext = 'mp4' if media.media_type == MediaType.VIDEO else 'jpg'
                 filename = f"{post.post_id}_{index}.{ext}"
                 file_path = os.path.join(hashtag_dir, filename)
                 
-                # 下載
                 if self.downloader.download(media.url, file_path):
                     media.local_path = file_path
                     success_count += 1

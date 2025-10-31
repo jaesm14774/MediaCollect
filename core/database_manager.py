@@ -13,11 +13,8 @@ import json
 import sys
 import os
 
-# 載入欄位轉換器
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.platform_config import apply_field_transformers
-
-# 導入 logger
 from lib.logger import get_logger
 logger = get_logger('DatabaseManager')
 
@@ -47,7 +44,6 @@ class DatabaseManager:
         self.password = password
         self.database = database
         
-        # 建立連接
         self.conn = pymysql.connect(
             host=host,
             port=int(port),
@@ -56,8 +52,6 @@ class DatabaseManager:
             db=database
         )
         self.cursor = self.conn.cursor()
-        
-        # 建立 SQLAlchemy engine
         self.engine = create_engine(
             f'mysql+mysqldb://{user}:{quote_plus(password)}@{host}:{port}/{database}?charset=utf8mb4'
         )
@@ -72,10 +66,6 @@ class DatabaseManager:
             self.conn.close()
         logger.info("已關閉資料庫連接")
     
-    # =========================================================================
-    # 使用者管理
-    # =========================================================================
-    
     def save_user(self, user: PlatformUser):
         """
         儲存使用者記錄（每次都新增一筆歷史記錄）
@@ -87,20 +77,14 @@ class DatabaseManager:
         user_data['create_time'] = datetime.datetime.now()
         user_data['created_at'] = datetime.datetime.now()
         user_data['updated_at'] = datetime.datetime.now()
-        user_data['status'] = 1  # 啟用狀態
+        user_data['status'] = 1
         
-        # 套用欄位轉換器
         user_data = apply_field_transformers(user_data)
         
         df = pd.DataFrame([user_data])
         df.to_sql('social_users', self.engine, if_exists='append', index=False)
         
         logger.info(f"已儲存使用者歷史記錄: {user.username}")
-    
-    
-    # =========================================================================
-    # 貼文管理
-    # =========================================================================
     
     def save_posts(self, posts: List[SocialPost]):
         """
@@ -113,21 +97,15 @@ class DatabaseManager:
             logger.info("沒有貼文需要儲存")
             return
         
-        # 轉換為 DataFrame
         posts_data = []
         for post in posts:
             post_dict = post.to_dict()
             post_dict['create_time'] = datetime.datetime.now()
             post_dict['updated_at'] = datetime.datetime.now()
-            
-            # 套用欄位轉換器
             post_dict = apply_field_transformers(post_dict)
-            
             posts_data.append(post_dict)
         
         df = pd.DataFrame(posts_data)
-        
-        # 使用 update_table 方法儲存
         self._update_table(
             df=df,
             table_name='social_posts',
@@ -148,17 +126,13 @@ class DatabaseManager:
             logger.info("沒有限時動態需要儲存")
             return
         
-        # 轉換為 DataFrame
         stories_data = []
         for story in stories:
             story_dict = story.to_dict()
             story_dict['create_time'] = datetime.datetime.now()
             story_dict['updated_at'] = datetime.datetime.now()
-            
-            # 套用欄位轉換器（在映射欄位之前）
             story_dict = apply_field_transformers(story_dict)
             
-            # 將特定欄位映射到 social_stories 表的欄位結構
             story_record = {
                 'platform': story_dict.get('platform'),
                 'post_id': story_dict.get('post_id'),
@@ -179,8 +153,6 @@ class DatabaseManager:
             stories_data.append(story_record)
         
         df = pd.DataFrame(stories_data)
-        
-        # 使用 update_table 方法儲存
         self._update_table(
             df=df,
             table_name='social_stories',
@@ -210,7 +182,6 @@ class DatabaseManager:
             return
         
         try:
-            # Step 1: 清空暫存表並插入新資料的主鍵
             self.cursor.execute(f'TRUNCATE TABLE {diff_table_name}')
             self.conn.commit()
             
@@ -221,7 +192,6 @@ class DatabaseManager:
                 index=False
             )
             
-            # Step 2: 刪除已存在的資料
             primary_key_conditions = ' AND '.join(
                 [f'tb.{pk} = tb2.{pk}' for pk in primary_keys]
             )
@@ -237,7 +207,6 @@ class DatabaseManager:
             self.cursor.execute(delete_sql)
             self.conn.commit()
             
-            # Step 3: 插入新資料
             df.to_sql(table_name, self.engine, index=False, if_exists='append')
             
             logger.info(f"已更新 {table_name} 表，共 {len(df)} 筆資料")
@@ -247,10 +216,6 @@ class DatabaseManager:
             import traceback
             traceback.print_exc()
             raise
-    
-    # =========================================================================
-    # 收集結果儲存
-    # =========================================================================
     
     def save_collection_result(self, result: CollectionResult) -> bool:
         """
@@ -267,18 +232,15 @@ class DatabaseManager:
             return False
         
         try:
-            # 1. 儲存使用者資料（每次收集都會新增一筆歷史記錄）
             if result.user:
                 self.save_user(result.user)
             else:
                 logger.warning("沒有使用者資料")
                 return False
             
-            # 2. 儲存貼文
             if result.posts:
                 self.save_posts(result.posts)
             
-            # 3. 儲存限時動態
             if result.stories:
                 self.save_stories(result.stories)
             
@@ -291,10 +253,6 @@ class DatabaseManager:
             traceback.print_exc()
             return False
     
-    # =========================================================================
-    # 查詢功能
-    # =========================================================================
-    
     def get_active_users(self, platform: Optional[str] = None) -> pd.DataFrame:
         """
         取得所有啟用的使用者列表（只返回唯一的使用者，避免重複）
@@ -306,7 +264,6 @@ class DatabaseManager:
             使用者資料 DataFrame（每個使用者只會出現一次）
         """
         if platform:
-            # 使用子查詢取得每個使用者的最新記錄，避免重複
             query = """
                 SELECT t1.* 
                 FROM social_users t1
@@ -366,10 +323,6 @@ class DatabaseManager:
         df = pd.read_sql_query(query, self.engine, params=(platform, username, limit))
         return df
     
-    # =========================================================================
-    # Hashtag 貼文管理
-    # =========================================================================
-    
     def save_hashtag_posts(self, posts: List, hashtag: str):
         """
         儲存 hashtag 貼文列表
@@ -382,24 +335,17 @@ class DatabaseManager:
             logger.info("沒有 hashtag 貼文需要儲存")
             return
         
-        # 轉換為 DataFrame
         posts_data = []
         for post in posts:
             post_dict = post.to_dict()
-            post_dict['hashtag'] = hashtag.lstrip('#')  # 移除 # 符號
+            post_dict['hashtag'] = hashtag.lstrip('#')
             post_dict['create_time'] = datetime.datetime.now()
             post_dict['updated_at'] = datetime.datetime.now()
-            
-            # 套用欄位轉換器
             post_dict = apply_field_transformers(post_dict)
-            
             posts_data.append(post_dict)
         
         df = pd.DataFrame(posts_data)
         
-        # ========== 去重處理 ==========
-        # 根據唯一鍵 (platform, hashtag, post_id) 去除重複資料
-        # 保留最後一筆（最新的）
         original_count = len(df)
         df = df.drop_duplicates(
             subset=['platform', 'hashtag', 'post_id'], 
@@ -412,13 +358,11 @@ class DatabaseManager:
                 f"去除了 {original_count - deduplicated_count} 筆重複的 hashtag 貼文 "
                 f"(原始: {original_count}, 去重後: {deduplicated_count})"
             )
-        # ==============================
         
         if len(df) == 0:
             logger.info("去重後沒有需要儲存的 hashtag 貼文")
             return
         
-        # 使用 update_table 方法儲存
         self._update_table(
             df=df,
             table_name='social_hashtag_posts',
@@ -443,7 +387,6 @@ class DatabaseManager:
             return False
         
         try:
-            # 儲存 hashtag 貼文
             if result.posts:
                 self.save_hashtag_posts(result.posts, result.hashtag)
             else:
@@ -457,10 +400,6 @@ class DatabaseManager:
             import traceback
             traceback.print_exc()
             return False
-    
-    # =========================================================================
-    # 收集歷史記錄管理
-    # =========================================================================
     
     def save_collection_history(
         self,
@@ -516,11 +455,9 @@ class DatabaseManager:
             return False
     
     def __enter__(self):
-        """支援 with 語句"""
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """支援 with 語句"""
         self.close()
 
 
@@ -540,14 +477,12 @@ def create_database_manager_from_config(config_path: str = None) -> DatabaseMana
     """
     import os
     
-    # 優先使用環境變數
     db_host = os.getenv('DB_HOST')
     db_port = os.getenv('DB_PORT')
     db_user = os.getenv('DB_USER')
     db_password = os.getenv('DB_PASSWORD')
     db_name = os.getenv('DB_NAME', 'crawler')
     
-    # 如果環境變數完整，直接使用
     if db_host and db_port and db_user and db_password:
         return DatabaseManager(
             host=db_host,
@@ -557,7 +492,6 @@ def create_database_manager_from_config(config_path: str = None) -> DatabaseMana
             database=db_name
         )
     
-    # 否則嘗試從設定檔讀取（向下相容）
     if config_path and os.path.exists(config_path):
         config = pd.read_csv(config_path, index_col='name')
         return DatabaseManager(
@@ -568,7 +502,6 @@ def create_database_manager_from_config(config_path: str = None) -> DatabaseMana
             database=db_name
         )
     
-    # 都沒有的話顯示錯誤
     raise ValueError(
         "無法建立資料庫連接！請設定以下任一方式：\n"
         "1. 在 .env 檔案中設定 DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME\n"

@@ -237,7 +237,7 @@ class HashtagPost(SocialPost):
     Hashtag 貼文資料模型
     繼承自 SocialPost，額外儲存 hashtag 資訊
     """
-    hashtag: str = ""  # 收集的 hashtag（不含 # 符號）
+    hashtag: str = ""
     
     def to_dict(self) -> Dict[str, Any]:
         """轉換為字典格式"""
@@ -279,7 +279,7 @@ class CollectionResult:
 class HashtagCollectionResult:
     """Hashtag 收集結果"""
     platform: PlatformType
-    hashtag: str  # 收集的 hashtag（不含 # 符號）
+    hashtag: str
     success: bool
     posts: List[HashtagPost] = field(default_factory=list)
     error_message: Optional[str] = None
