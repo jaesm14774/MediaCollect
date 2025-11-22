@@ -1,6 +1,7 @@
 # 環境變數檔案（包含機敏資訊）
 .env
 *.bat
+*.lock
 
 # 機敏設定檔
 accounts.txt

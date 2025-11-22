@@ -136,29 +136,41 @@ class InstagramCollector(ApifyBasedCollector):
             run_input = {
                 "usernames": [self.username]
             }
-            
+
             result_items = self.call_apify_actor(self.STORY_SCRAPER, run_input)
-            
+
             if not result_items:
                 print(f"  [Instagram] ℹ 未取得限時動態資料（可能原因：無限時動態、帳號私密、網路錯誤）")
                 return []
-            
+
             stories = []
             for item in result_items:
+                # 過濾掉狀態訊息 (新格式會返回 type: "status" 的項目)
+                if isinstance(item, dict) and item.get('type') == 'status':
+                    continue
+
+                # 新格式：直接是扁平的 story 物件
+                # 舊格式：stories 巢狀在 item['stories'] 下
                 if 'stories' in item and isinstance(item['stories'], list):
+                    # 舊格式處理
                     for story_raw in item['stories']:
                         story = self._parse_story(story_raw)
                         if story:
                             stories.append(story)
-            
+                else:
+                    # 新格式處理
+                    story = self._parse_story(item)
+                    if story:
+                        stories.append(story)
+
             if len(stories) == 0 and len(result_items) > 0:
                 print(f"  [Instagram] ℹ 取得了原始資料但無有效限時動態（可能該使用者目前沒有限時動態）")
-            
+
             if limit is not None and len(stories) > limit:
                 stories = stories[:limit]
-            
+
             return stories
-        
+
         except Exception as e:
             print(f"[Instagram] ✗ 抓取限時動態失敗: {e}")
             import traceback
@@ -248,16 +260,89 @@ class InstagramCollector(ApifyBasedCollector):
     def _parse_story(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
         """解析限時動態資料"""
         try:
+            # 新格式檢查：必須有 media_url
+            media_url = raw.get('media_url')
+            if not media_url:
+                # 嘗試舊格式
+                return self._parse_story_old_format(raw)
+
+            raw_data_json = json.dumps(raw, ensure_ascii=False)
+
+            # 新格式欄位
+            username = raw.get('username', self.username)
+            user_id = raw.get('user_id') or ''
+
+            # 解析時間戳記（ISO 格式字串）
+            timestamp_str = raw.get('timestamp')
+            if timestamp_str:
+                try:
+                    created_at = datetime.datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+                    expires_at = created_at + datetime.timedelta(days=1)
+                except Exception:
+                    created_at = None
+                    expires_at = None
+            else:
+                created_at = None
+                expires_at = None
+
+            # 生成 story_id（新格式沒有 pk，使用 URL hash 或時間戳）
+            import hashlib
+            story_id = hashlib.md5(media_url.encode()).hexdigest()[:16]
+
+            story = SocialPost(
+                platform=PlatformType.INSTAGRAM,
+                post_id=story_id,
+                content_type=ContentType.STORY,
+                author_id=str(user_id),
+                author_username=username,
+                created_at=created_at,
+                expires_at=expires_at,
+                raw_data=raw_data_json
+            )
+
+            # 判斷媒體類型
+            has_audio = raw.get('has_audio', False)
+            duration = raw.get('duration', 0)
+            thumbnail_url = raw.get('thumbnail_url')
+
+            # 根據 has_audio 或 URL 判斷是影片還是圖片
+            is_video = has_audio or duration > 0 or '.mp4' in media_url.lower()
+
+            if is_video:
+                story.media_items.append(MediaItem(
+                    media_type=MediaType.VIDEO,
+                    url=media_url,
+                    thumbnail_url=thumbnail_url,
+                    duration=duration if duration > 0 else None
+                ))
+            else:
+                story.media_items.append(MediaItem(
+                    media_type=MediaType.IMAGE,
+                    url=media_url,
+                    thumbnail_url=thumbnail_url
+                ))
+
+            return story
+
+        except Exception as e:
+            print(f"[Instagram] 解析限時動態失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _parse_story_old_format(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
+        """解析限時動態資料（舊格式）"""
+        try:
             story_id = raw.get('pk')
             if not story_id:
                 return None
-            
+
             raw_data_json = json.dumps(raw, ensure_ascii=False)
-            
+
             user = raw.get('user', {})
             author_id = user.get('id', '')
             author_username = user.get('username', self.username)
-            
+
             taken_at = raw.get('taken_at')
             if taken_at:
                 created_at = datetime.datetime.fromtimestamp(taken_at)
@@ -265,7 +350,7 @@ class InstagramCollector(ApifyBasedCollector):
             else:
                 created_at = None
                 expires_at = None
-            
+
             story = SocialPost(
                 platform=PlatformType.INSTAGRAM,
                 post_id=str(story_id),
@@ -276,7 +361,7 @@ class InstagramCollector(ApifyBasedCollector):
                 expires_at=expires_at,
                 raw_data=raw_data_json
             )
-            
+
             video_versions = raw.get('video_versions', [])
             if video_versions:
                 video_url = video_versions[0].get('url')
@@ -287,7 +372,7 @@ class InstagramCollector(ApifyBasedCollector):
                         width=video_versions[0].get('width'),
                         height=video_versions[0].get('height')
                     ))
-            
+
             image_versions2 = raw.get('image_versions2', {})
             candidates = image_versions2.get('candidates', [])
             if candidates:
@@ -299,11 +384,11 @@ class InstagramCollector(ApifyBasedCollector):
                         width=candidates[0].get('width'),
                         height=candidates[0].get('height')
                     ))
-            
+
             return story
-        
+
         except Exception as e:
-            print(f"[Instagram] 解析限時動態失敗: {e}")
+            print(f"[Instagram] 解析限時動態失敗（舊格式）: {e}")
             return None
     
     def _parse_media(self, raw: Dict[str, Any]) -> List[MediaItem]:

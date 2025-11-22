@@ -8,9 +8,17 @@ import time
 import random
 import pandas as pd
 import asyncio
+import platform as platform_module
 from typing import List, Optional
 from multiprocessing import Pool, cpu_count
 from functools import partial
+from contextlib import contextmanager
+
+# 根據作業系統導入適當的文件鎖模組
+if platform_module.system() == 'Windows':
+    import msvcrt  # Windows 文件鎖
+else:
+    import fcntl  # Unix/Linux 文件鎖
 
 from core.factory import CollectorFactory, register_all_collectors
 from core.database_manager import create_database_manager_from_config
@@ -28,6 +36,84 @@ from lib.discord_notify import notify
 from lib.logger import get_logger
 
 logger = get_logger('MediaCollect')
+
+
+@contextmanager
+def file_lock(lock_file_path):
+    """
+    文件鎖上下文管理器，防止重複執行
+    
+    參數:
+        lock_file_path: 鎖文件路徑
+    
+    使用範例:
+        with file_lock('media_collect.lock'):
+            # 執行主要邏輯
+            pass
+    """
+    lock_file = None
+    try:
+        # 根據作業系統選擇打開模式
+        if platform_module.system() == 'Windows':
+            # Windows 需要以二進制模式打開才能使用 msvcrt.locking
+            lock_file = open(lock_file_path, 'wb+')
+        else:
+            # Unix/Linux 使用文本模式
+            lock_file = open(lock_file_path, 'w')
+        
+        # 根據作業系統選擇鎖定方式
+        if platform_module.system() == 'Windows':
+            # Windows 使用 msvcrt.locking（鎖定第一個字節）
+            try:
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+            except IOError:
+                lock_file.close()
+                logger.error(f"另一個 MediaCollect 實例正在運行中（鎖文件: {lock_file_path}）")
+                logger.error("請等待當前任務完成，或檢查是否有重複的排程任務")
+                sys.exit(1)
+        else:
+            # Unix/Linux 使用 fcntl
+            try:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except IOError:
+                lock_file.close()
+                logger.error(f"另一個 MediaCollect 實例正在運行中（鎖文件: {lock_file_path}）")
+                logger.error("請等待當前任務完成，或檢查是否有重複的排程任務")
+                sys.exit(1)
+        
+        # 寫入當前進程 ID 和時間戳
+        if platform_module.system() == 'Windows':
+            lock_info = f"PID: {os.getpid()}\nStarted: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            lock_file.write(lock_info.encode('utf-8'))
+        else:
+            lock_file.write(f"PID: {os.getpid()}\n")
+            lock_file.write(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        lock_file.flush()
+        
+        logger.info(f"已取得執行鎖（PID: {os.getpid()}）")
+        
+        yield
+        
+    except Exception as e:
+        logger.error(f"文件鎖操作失敗: {e}")
+        raise
+    finally:
+        if lock_file:
+            try:
+                if platform_module.system() == 'Windows':
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                lock_file.close()
+                # 刪除鎖文件
+                if os.path.exists(lock_file_path):
+                    try:
+                        os.remove(lock_file_path)
+                    except:
+                        pass  # 忽略刪除失敗
+                logger.info("已釋放執行鎖")
+            except Exception as e:
+                logger.warning(f"釋放鎖時發生錯誤: {e}")
 
 
 # 必須在類別外部，才能被 multiprocessing.Pool 序列化
@@ -965,6 +1051,13 @@ def main():
     import argparse
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 鎖文件路徑（放在腳本目錄）
+    lock_file_path = os.path.join(script_dir, 'media_collect.lock')
+    
+    # 使用文件鎖防止重複執行（僅在 daily 和 batch 模式下使用）
+    # interactive 模式不需要鎖，因為是手動執行
+    use_lock = False
 
     parser = argparse.ArgumentParser(
         description='通用社群媒體資料收集系統',
@@ -1043,27 +1136,38 @@ def main():
 
     if not os.path.isabs(args.accounts_file):
         args.accounts_file = os.path.join(script_dir, args.accounts_file)
+    
+    # 決定是否需要使用文件鎖（daily、batch、all 模式需要，避免排程重複執行）
+    use_lock = args.mode in ['daily', 'batch', 'all']
 
     if args.mode == 'interactive':
         interactive_mode()
     
     elif args.mode == 'daily':
-        crawler = SocialMediaCrawler()
-        try:
-            if args.use_multiprocess:
-                crawler.multiprocess_collect_from_accounts_file(
-                    args.accounts_file, 
-                    args.num_processes
-                )
-            elif args.use_async:
-                asyncio.run(crawler.async_collect_from_accounts_file(
-                    args.accounts_file, 
-                    args.concurrent_limit
-                ))
-            else:
-                crawler.collect_from_accounts_file(args.accounts_file)
-        finally:
-            crawler.close()
+        # 使用文件鎖防止重複執行
+        def run_daily():
+            crawler = SocialMediaCrawler()
+            try:
+                if args.use_multiprocess:
+                    crawler.multiprocess_collect_from_accounts_file(
+                        args.accounts_file, 
+                        args.num_processes
+                    )
+                elif args.use_async:
+                    asyncio.run(crawler.async_collect_from_accounts_file(
+                        args.accounts_file, 
+                        args.concurrent_limit
+                    ))
+                else:
+                    crawler.collect_from_accounts_file(args.accounts_file)
+            finally:
+                crawler.close()
+        
+        if use_lock:
+            with file_lock(lock_file_path):
+                run_daily()
+        else:
+            run_daily()
     
     elif args.mode == 'single':
         if not args.platform or not args.username:
@@ -1106,31 +1210,47 @@ def main():
             logger.error("批次模式需要指定 --platform")
             return
         
-        crawler = SocialMediaCrawler()
-        try:
-            if args.use_multiprocess:
-                crawler.multiprocess_batch_collect(
-                    args.platform, 
-                    None, 
-                    args.num_processes
-                )
-            elif args.use_async:
-                asyncio.run(crawler.async_batch_collect(
-                    args.platform, 
-                    None, 
-                    args.concurrent_limit
-                ))
-            else:
-                crawler.batch_collect(args.platform)
-        finally:
-            crawler.close()
+        # 使用文件鎖防止重複執行
+        def run_batch():
+            crawler = SocialMediaCrawler()
+            try:
+                if args.use_multiprocess:
+                    crawler.multiprocess_batch_collect(
+                        args.platform, 
+                        None, 
+                        args.num_processes
+                    )
+                elif args.use_async:
+                    asyncio.run(crawler.async_batch_collect(
+                        args.platform, 
+                        None, 
+                        args.concurrent_limit
+                    ))
+                else:
+                    crawler.batch_collect(args.platform)
+            finally:
+                crawler.close()
+        
+        if use_lock:
+            with file_lock(lock_file_path):
+                run_batch()
+        else:
+            run_batch()
     
     elif args.mode == 'all':
-        crawler = SocialMediaCrawler()
-        try:
-            crawler.collect_all_platforms()
-        finally:
-            crawler.close()
+        # 使用文件鎖防止重複執行
+        def run_all():
+            crawler = SocialMediaCrawler()
+            try:
+                crawler.collect_all_platforms()
+            finally:
+                crawler.close()
+        
+        if use_lock:
+            with file_lock(lock_file_path):
+                run_all()
+        else:
+            run_all()
 
 
 if __name__ == '__main__':

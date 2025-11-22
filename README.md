@@ -344,7 +344,16 @@ Windows (Task Scheduler):
 ```powershell
 # Run daily at 6 AM
 schtasks /create /tn "MediaCollect_Daily" /tr "python C:\path\to\main.py --mode daily" /sc daily /st 06:00
+
+# Or use the daily.bat script (recommended)
+# Make sure daily.bat uses "start /wait" to prevent duplicate execution
 ```
+
+**重要：防止重複執行**
+- 系統已內建文件鎖機制，自動防止 `daily`、`batch`、`all` 模式的重複執行
+- 如果檢測到另一個實例正在運行，會自動退出並顯示錯誤訊息
+- 鎖文件位置：`media_collect.lock`（在腳本目錄）
+- 使用 `daily.bat` 時，請確保使用 `start /wait` 而不是 `start /min`，以避免工作排程器重複觸發
 
 Linux/Mac (Crontab):
 ```bash
@@ -357,6 +366,8 @@ crontab -e
 # Run every 6 hours
 0 */6 * * * cd /path/to/MediaCollect && python main.py --mode daily
 ```
+
+**注意：** `daily`、`batch`、`all` 模式會自動使用文件鎖防止重複執行。如果任務仍在運行中，新的執行會自動退出。
 
 ### Method 2: Interactive Mode
 
