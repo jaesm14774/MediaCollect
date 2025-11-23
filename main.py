@@ -376,16 +376,30 @@ class SocialMediaCrawler:
                 )
             
             include_stories = (story_limit is None or story_limit > 0)
-            result = collector.collect_all(
-                post_limit=post_limit,
-                story_limit=story_limit,
-                include_stories=include_stories,
-                photo_limit=photo_limit,
-                include_photos=(photo_limit is not None and photo_limit > 0),
-                posts_newer_than=posts_newer_than,
-                posts_older_than=posts_older_than,
-                caption_text=caption_text
-            )
+            
+            # 檢查 collect_all 是否支援 reel_limit 參數
+            import inspect
+            collect_all_signature = inspect.signature(collector.collect_all)
+            collect_all_params = collect_all_signature.parameters
+            
+            collect_kwargs = {
+                'post_limit': post_limit,
+                'story_limit': story_limit,
+                'include_stories': include_stories,
+                'photo_limit': photo_limit,
+                'include_photos': (photo_limit is not None and photo_limit > 0),
+                'posts_newer_than': posts_newer_than,
+                'posts_older_than': posts_older_than,
+                'caption_text': caption_text
+            }
+            
+            # 如果是 Instagram，添加 reel 相關參數
+            if platform == 'instagram' and 'reel_limit' in collect_all_params:
+                reel_limit = get_platform_setting(platform, 'reel_limit', 3)
+                collect_kwargs['reel_limit'] = reel_limit
+                collect_kwargs['include_reels'] = True
+            
+            result = collector.collect_all(**collect_kwargs)
             
             if result.success:
                 self.db.save_collection_result(result)
@@ -510,6 +524,7 @@ class SocialMediaCrawler:
         username: str,
         post_limit: Optional[int] = None,
         story_limit: Optional[int] = None,
+        reel_limit: Optional[int] = None,
         download_media: Optional[bool] = None
     ) -> CollectionResult:
         """
@@ -520,6 +535,7 @@ class SocialMediaCrawler:
             username: 使用者名稱
             post_limit: 貼文數量限制 (None 使用設定檔的值)
             story_limit: 限時動態數量限制
+            reel_limit: Reel 數量限制 (None 使用設定檔的值，僅 Instagram)
             download_media: 是否下載媒體
         
         返回:
@@ -530,6 +546,8 @@ class SocialMediaCrawler:
                 post_limit = get_platform_setting(platform, 'post_limit', 50)
             if story_limit is None:
                 story_limit = get_platform_setting(platform, 'story_limit')
+            if reel_limit is None and platform == 'instagram':
+                reel_limit = get_platform_setting(platform, 'reel_limit', 3)
             if download_media is None:
                 download_media = get_platform_setting(platform, 'download_media', True)
             
@@ -553,11 +571,24 @@ class SocialMediaCrawler:
                 )
             
             include_stories = (story_limit is None or story_limit > 0)
-            result = await collector.collect_all_async(
-                post_limit=post_limit,
-                story_limit=story_limit,
-                include_stories=include_stories
-            )
+            include_reels = (platform == 'instagram' and (reel_limit is None or reel_limit > 0))
+            
+            # 檢查 collect_all_async 是否支援 reel_limit 參數
+            import inspect
+            collect_all_signature = inspect.signature(collector.collect_all_async)
+            collect_all_params = collect_all_signature.parameters
+            
+            collect_kwargs = {
+                'post_limit': post_limit,
+                'story_limit': story_limit,
+                'include_stories': include_stories
+            }
+            
+            if 'reel_limit' in collect_all_params and platform == 'instagram':
+                collect_kwargs['reel_limit'] = reel_limit
+                collect_kwargs['include_reels'] = include_reels
+            
+            result = await collector.collect_all_async(**collect_kwargs)
             
             if result.success:
                 self.db.save_collection_result(result)

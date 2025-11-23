@@ -31,6 +31,7 @@ This system automatically fetches user profiles, posts, stories, and media files
 The system can:
 - **Fetch user profiles**: username, follower count, verified status, bio, profile picture, etc.
 - **Collect posts**: text, images, videos, likes, comments, shares, timestamps
+- **Collect reels**: Instagram Reels with video content, engagement metrics, and metadata
 - **Download media files**: high-resolution images and videos saved locally
 - **Track stories**: 24-hour stories (on platforms that support them)
 - **Store everything in MySQL**: unified database schema for all platforms
@@ -258,6 +259,7 @@ PLATFORM_SETTINGS = {
     'instagram': {
         'enabled': True,           # Enable/disable this platform
         'post_limit': 50,          # How many posts to collect
+        'reel_limit': 3,           # How many reels to collect per profile
         'story_limit': None,       # How many stories (None = all)
         'download_media': True,    # Download images/videos?
     },
@@ -515,7 +517,7 @@ result = collector.collect_all(
 
 | Platform | Status | What You Can Collect | Apify Actors Used |
 |----------|--------|---------------------|-------------------|
-| **Instagram** | ✅ Fully supported | User profiles, posts, stories, carousels, reels, hashtag tracking | `apify/instagram-profile-scraper`<br>`apify/instagram-post-scraper`<br>`igview-owner/instagram-story-viewer`<br>`apify/instagram-hashtag-scraper` |
+| **Instagram** | ✅ Fully supported | User profiles, posts, stories, carousels, reels, hashtag tracking | `apify/instagram-profile-scraper`<br>`apify/instagram-post-scraper`<br>`apify/instagram-reel-scraper`<br>`igview-owner/instagram-story-viewer`<br>`apify/instagram-hashtag-scraper` |
 | **Facebook** | ✅ Fully supported | Page info, posts, photos (with OCR) | `apify/facebook-pages-scraper`<br>`apify/facebook-posts-scraper`<br>`apify/facebook-photos-scraper` |
 | **Twitter(X)** | ✅ Supported | User profiles, tweets, retweets, hashtags with time filtering | `apify/twitter-scraper` |
 | **Threads** | ✅ Supported | User profiles, threads | `apify/threads-scraper` |
@@ -527,6 +529,7 @@ result = collector.collect_all(
 **Instagram:**
 - ✅ Profile info, posts, stories, reels
 - ✅ Carousel posts (multiple images/videos)
+- ✅ Reel collection (separate from posts, configurable limit per profile)
 - ✅ Hashtag tracking (find posts by topic)
 - ✅ Story viewer (24-hour content)
 

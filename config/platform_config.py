@@ -48,6 +48,7 @@ PLATFORM_SETTINGS = {
     'instagram': {
         'enabled': True,
         'post_limit': 5,          # 每個使用者抓取的貼文數
+        'reel_limit': 5,          # 每個使用者抓取的 Reel 數 (Maximum reels per profile)
         'story_limit': None,      # 限時動態數量 (None=全部)
         'download_media': True,   # 是否下載媒體
         # Hashtag 批次時間切分設定
@@ -125,6 +126,7 @@ APIFY_ACTORS = {
     'instagram': {
         'profile': 'apify/instagram-profile-scraper',
         'post': 'apify/instagram-post-scraper',
+        'reel': 'apify/instagram-reel-scraper',
         'story': 'igview-owner/instagram-story-viewer',
         'hashtag': 'apify/instagram-hashtag-scraper',
     },
