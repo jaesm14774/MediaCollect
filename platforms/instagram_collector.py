@@ -32,6 +32,7 @@ class InstagramCollector(ApifyBasedCollector):
     # Apify Actor IDs
     PROFILE_SCRAPER = APIFY_ACTORS['instagram']['profile']
     POST_SCRAPER = APIFY_ACTORS['instagram']['post']
+    REEL_SCRAPER = APIFY_ACTORS['instagram']['reel']
     STORY_SCRAPER = APIFY_ACTORS['instagram']['story']
     
     def __init__(self, username: str, api_token: str):
@@ -130,6 +131,39 @@ class InstagramCollector(ApifyBasedCollector):
             traceback.print_exc()
             return []
     
+    def fetch_reels(self, limit: int = 3) -> List[SocialPost]:
+        """抓取使用者 Reels"""
+        try:
+            run_input = {
+                "username": [self.username],
+                "resultsLimit": limit,
+                "skipPinnedPosts": True,
+                "includeSharesCount": True
+            }
+            
+            items = self.call_apify_actor(self.REEL_SCRAPER, run_input)
+            
+            if not items:
+                print(f"  [Instagram] ℹ 未取得 Reel 資料（可能原因：無 Reel、帳號私密、網路錯誤）")
+                return []
+            
+            reels = []
+            for item in items:
+                reel = self._parse_reel(item)
+                if reel:
+                    reels.append(reel)
+            
+            if len(reels) == 0 and len(items) > 0:
+                print(f"  [Instagram] ⚠ 取得了 {len(items)} 筆原始資料，但解析後無有效 Reel")
+            
+            return reels
+        
+        except Exception as e:
+            print(f"[Instagram] ✗ 抓取 Reel 失敗: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+    
     def fetch_stories(self, limit: Optional[int] = None) -> List[SocialPost]:
         """抓取限時動態"""
         try:
@@ -176,6 +210,148 @@ class InstagramCollector(ApifyBasedCollector):
             import traceback
             traceback.print_exc()
             return []
+    
+    def collect_all(
+        self, 
+        post_limit: int = 50, 
+        story_limit: Optional[int] = None,
+        include_stories: bool = True,
+        reel_limit: Optional[int] = None,
+        include_reels: bool = True,
+        photo_limit: Optional[int] = None,
+        include_photos: bool = False,
+        posts_newer_than: Optional[str] = None,
+        posts_older_than: Optional[str] = None,
+        caption_text: bool = False
+    ):
+        """
+        執行完整的資料收集流程（包含 Reels）
+        
+        參數:
+            post_limit: 要抓取的貼文數量
+            story_limit: 要抓取的限時動態數量
+            include_stories: 是否抓取限時動態
+            reel_limit: 要抓取的 Reel 數量
+            include_reels: 是否抓取 Reels
+            photo_limit: 要抓取的照片數量
+            include_photos: 是否抓取照片
+            posts_newer_than: 只抓取此日期之後的貼文
+            posts_older_than: 只抓取此日期之前的貼文
+            caption_text: 是否提取影片字幕
+        
+        返回:
+            CollectionResult 物件
+        """
+        from datetime import datetime
+        from core.data_models import CollectionResult
+        
+        started_at = datetime.now()
+        
+        try:
+            print(f"[{self.platform.value}] 開始抓取使用者 {self.username} 的資料...")
+            user = self.fetch_user_profile()
+            
+            if not user:
+                finished_at = datetime.now()
+                duration = int((finished_at - started_at).total_seconds())
+                return CollectionResult(
+                    platform=self.platform,
+                    success=False,
+                    error_message=f"無法取得使用者 {self.username} 的資料",
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    duration_seconds=duration
+                )
+            
+            self.user_info = user
+            print(f"  ✓ 使用者資料: {user.display_name or user.username}")
+            
+            print(f"[{self.platform.value}] 開始抓取貼文（限制: {post_limit} 筆）...")
+            posts = self.fetch_posts(limit=post_limit)
+            print(f"  ✓ 成功抓取 {len(posts)} 筆貼文")
+            
+            # 收集 Reels
+            reels = []
+            if include_reels:
+                if reel_limit is None:
+                    from config.platform_config import get_platform_setting
+                    reel_limit = get_platform_setting('instagram', 'reel_limit', 3)
+                
+                print(f"[{self.platform.value}] 開始抓取 Reels（限制: {reel_limit} 筆）...")
+                reels = self.fetch_reels(limit=reel_limit)
+                print(f"  ✓ 成功抓取 {len(reels)} 筆 Reels")
+                # 將 Reels 加入到 posts 列表中（因為它們都是 SocialPost）
+                posts.extend(reels)
+            
+            stories = []
+            if include_stories:
+                print(f"[{self.platform.value}] 開始抓取限時動態...")
+                stories = self.fetch_stories(limit=story_limit)
+                print(f"  ✓ 成功抓取 {len(stories)} 筆限時動態")
+            
+            photos = []
+            if include_photos and hasattr(self, 'fetch_photos'):
+                print(f"[{self.platform.value}] 開始抓取照片...")
+                photos = self.fetch_photos(limit=photo_limit or 10)
+                print(f"  ✓ 成功抓取 {len(photos)} 張照片")
+                posts.extend(photos)
+            
+            finished_at = datetime.now()
+            duration = int((finished_at - started_at).total_seconds())
+            
+            return CollectionResult(
+                platform=self.platform,
+                success=True,
+                user=user,
+                posts=posts,
+                stories=stories,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration
+            )
+        
+        except Exception as e:
+            import traceback
+            error_msg = f"收集失敗: {str(e)}\n{traceback.format_exc()}"
+            print(f"[錯誤] {error_msg}")
+            
+            finished_at = datetime.now()
+            duration = int((finished_at - started_at).total_seconds())
+            
+            return CollectionResult(
+                platform=self.platform,
+                success=False,
+                error_message=error_msg,
+                started_at=started_at,
+                finished_at=finished_at,
+                duration_seconds=duration
+            )
+    
+    async def collect_all_async(
+        self, 
+        post_limit: int = 50, 
+        story_limit: Optional[int] = None,
+        include_stories: bool = True,
+        reel_limit: Optional[int] = None,
+        include_reels: bool = True,
+        photo_limit: Optional[int] = None,
+        include_photos: bool = False,
+        posts_newer_than: Optional[str] = None,
+        posts_older_than: Optional[str] = None,
+        caption_text: bool = False
+    ):
+        """
+        執行完整的資料收集流程（異步版本，包含 Reels）
+        """
+        import asyncio
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.collect_all(
+                post_limit, story_limit, include_stories, reel_limit, include_reels,
+                photo_limit, include_photos, posts_newer_than, posts_older_than, caption_text
+            )
+        )
     
     def download_media(self, post: SocialPost, save_dir: str) -> bool:
         try:
@@ -255,6 +431,86 @@ class InstagramCollector(ApifyBasedCollector):
         
         except Exception as e:
             print(f"[Instagram] 解析貼文失敗: {e}")
+            return None
+    
+    def _parse_reel(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
+        """解析 Reel 資料"""
+        try:
+            post_id = raw.get('shortCode') or raw.get('id', '')
+            if not post_id:
+                return None
+            
+            raw_data_json = json.dumps(raw, ensure_ascii=False)
+            
+            author_username = raw.get('ownerUsername', self.username)
+            author_id = raw.get('ownerId', '')
+            author_display_name = raw.get('ownerFullName', '')
+            
+            timestamp = raw.get('timestamp')
+            if timestamp:
+                if isinstance(timestamp, str):
+                    created_at = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                else:
+                    created_at = datetime.datetime.fromtimestamp(timestamp)
+            else:
+                created_at = None
+            
+            reel = SocialPost(
+                platform=PlatformType.INSTAGRAM,
+                post_id=post_id,
+                content_type=ContentType.REEL,
+                author_id=author_id,
+                author_username=author_username,
+                author_display_name=author_display_name,
+                text=raw.get('caption', ''),
+                like_count=raw.get('likesCount', 0),
+                comment_count=raw.get('commentsCount', 0),
+                view_count=raw.get('videoViewCount') or raw.get('videoPlayCount') or raw.get('playCount', 0),
+                comments_disabled=raw.get('isCommentsDisabled', False),
+                is_pinned=raw.get('isPinned', False),
+                is_promoted=raw.get('isSponsored', False),
+                created_at=created_at,
+                post_url=raw.get('url') or f"https://www.instagram.com/p/{post_id}/",
+                raw_data=raw_data_json
+            )
+            
+            # 解析媒體項目
+            video_url = raw.get('videoUrl')
+            if video_url:
+                reel.media_items.append(MediaItem(
+                    media_type=MediaType.VIDEO,
+                    url=video_url,
+                    thumbnail_url=raw.get('displayUrl'),
+                    duration=raw.get('videoDuration'),
+                    width=raw.get('dimensionsWidth'),
+                    height=raw.get('dimensionsHeight')
+                ))
+            else:
+                # 如果沒有 videoUrl，嘗試從 images 中取得
+                images = raw.get('images', [])
+                if images and len(images) > 0:
+                    reel.media_items.append(MediaItem(
+                        media_type=MediaType.IMAGE,
+                        url=images[0],
+                        width=raw.get('dimensionsWidth'),
+                        height=raw.get('dimensionsHeight')
+                    ))
+            
+            # 提取 hashtags 和 mentions
+            if 'hashtags' in raw and isinstance(raw['hashtags'], list):
+                reel.hashtags = raw['hashtags']
+            else:
+                reel.hashtags = self._extract_hashtags(reel.text)
+            
+            if 'mentions' in raw and isinstance(raw['mentions'], list):
+                reel.mentions = raw['mentions']
+            
+            return reel
+        
+        except Exception as e:
+            print(f"[Instagram] 解析 Reel 失敗: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _parse_story(self, raw: Dict[str, Any]) -> Optional[SocialPost]:
